@@ -2545,6 +2545,9 @@
       min-width: 0;
       min-height: 0;
       overflow: auto;
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior-y: contain;
+      touch-action: pan-y;
       background: #fff;
       color: #171717;
       scrollbar-width: thin;
@@ -4025,7 +4028,7 @@
     }
     function lockPageScrollToThread() {
       let pageTouch = null;
-      const verticalScrollSelector = '.thread, .thread-menu, .steps, textarea';
+      const verticalScrollSelector = '.thread, .workspace, .thread-menu, .steps, textarea';
       const horizontalScrollSelector = '.top-actions, .process-tool-row, .table-scroll, .attachment-tray';
       const resetPageTouch = () => { pageTouch = null; };
       const preventPageMove = event => {
