@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">ChatGPT AZ</string>
+    <string name="app_subtitle">本机 ChatGPT 远程控制</string>
+    <string name="language_toggle">EN</string>
+    <string name="language_toggle_description">切换到 English</string>
+    <string name="mobile_connect_badge">局域网连接</string>
+    <string name="mobile_hero_title">扫描电脑二维码\n连接这台 ChatGPT</string>
+    <string name="mobile_hero_subtitle">保持电脑端控制台打开，手机和电脑连接同一个 Wi‑Fi，就能在手机上操作 Codex。</string>
+    <string name="mobile_scan_ready">等待扫码</string>
+    <string name="mobile_scan_card_title">电脑端连接入口</string>
+    <string name="mobile_scan_card_subtitle">打开 Windows 控制台二维码，用手机扫一扫。</string>
+    <string name="manual_connect_title">手动连接</string>
+    <string name="manual_connect_subtitle">如果扫码不方便，也可以粘贴电脑端链接。</string>
+    <string name="mobile_tip_same_wifi_title">同一 Wi‑Fi</string>
+    <string name="mobile_tip_same_wifi_desc">手机和电脑保持在同一个局域网。</string>
+    <string name="mobile_tip_token_title">Token 校验</string>
+    <string name="mobile_tip_token_desc">链接自带 token，二维码变化后需要重新扫码。</string>
+    <string name="mobile_tip_notify_title">任务提醒</string>
+    <string name="mobile_tip_notify_desc">连接后可收到 Codex 任务完成通知。</string>
+    <string name="desktop_qr_hint">Windows 控制台 → 手机扫码</string>
+    <string name="connect_title">连接电脑</string>
+    <string name="scan_qr">扫描二维码</string>
+    <string name="scan_prompt">扫描电脑端连接二维码</string>
+    <string name="address_label">电脑端地址</string>
+    <string name="address_hint">http://192.168.x.x:8787/?token=…</string>
+    <string name="connect">连接</string>
+    <string name="connect_recent">继续上次连接</string>
+    <string name="recent_cleared">已清除上次连接</string>
+    <string name="local_mode">局域网私密连接</string>
+    <string name="reload">刷新</string>
+    <string name="disconnect">断开连接</string>
+    <string name="camera_unavailable">此设备没有可用相机</string>
+    <string name="connection_failed">连接失败，请检查电脑端服务和局域网</string>
+    <string name="connection_timed_out">连接超时，请确认手机和电脑在同一个 Wi‑Fi，然后重新扫码</string>
+    <string name="token_invalid">token 无效，请重新扫描电脑端二维码</string>
+    <string name="http_error">电脑端返回 HTTP %1$d</string>
+    <string name="webview_process_failed">页面渲染已中断，请重新连接</string>
+    <string name="external_link_failed">无法打开外部链接</string>
+    <string name="file_picker_failed">无法打开附件选择器</string>
+    <string name="screen_fit_title">屏幕与状态栏</string>
+    <string name="screen_fit_auto">自动适配（推荐）</string>
+    <string name="screen_fit_fullscreen">全屏延展</string>
+    <string name="screen_fit_auto_selected">已按设备状态栏和刘海自动适配</string>
+    <string name="screen_fit_fullscreen_selected">已启用全屏延展</string>
+    <string name="notification_permission_denied">通知权限未开启，任务完成时不会提醒</string>
+    <string name="monitor_title">ChatGPT AZ 已连接</string>
+    <string name="monitor_connecting">正在监听任务状态</string>
+    <string name="monitor_channel">连接状态</string>
+    <string name="monitor_channel_description">保持与电脑端的任务状态连接</string>
+    <string name="result_channel">任务完成提醒</string>
+    <string name="task_completed">Codex 任务已完成</string>
+    <string name="task_failed">Codex 任务执行失败</string>
+    <string name="tap_to_open">点按返回 ChatGPT AZ</string>
+</resources>

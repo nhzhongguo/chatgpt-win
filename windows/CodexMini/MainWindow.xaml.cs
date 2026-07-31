@@ -25,6 +25,9 @@ public partial class MainWindow : Window
             OpenWebButton,
             CopyLinkButton,
             LaunchCdpButton,
+            LanDiagnosticButton,
+            OpenApkButton,
+            OpenInstallerButton,
             RestartButton,
             RefreshButton,
             OpenLogsButton,
@@ -55,7 +58,7 @@ public partial class MainWindow : Window
         await RunActionAsync(async () =>
         {
             await service.CopyLocalLinkAsync();
-            WpfMessageBox.Show(this, "已复制本机链接", "Codex Max", MessageBoxButton.OK, MessageBoxImage.Information);
+            WpfMessageBox.Show(this, "已复制本机链接", "ChatGPT Win", MessageBoxButton.OK, MessageBoxImage.Information);
         });
         await RefreshStateAsync();
     }
@@ -71,9 +74,43 @@ public partial class MainWindow : Window
         await RunActionAsync(async () =>
         {
             var result = await service.LaunchControlledCodexAsync();
-            WpfMessageBox.Show(this, result.Message, "Codex Max", MessageBoxButton.OK, MessageBoxImage.Information);
+            WpfMessageBox.Show(this, result.Message, "ChatGPT Win", MessageBoxButton.OK, MessageBoxImage.Information);
         });
         await RefreshStateAsync();
+    }
+
+    private async void LanDiagnostic_Click(object sender, RoutedEventArgs e)
+    {
+        await RunActionAsync(async () =>
+        {
+            var snapshot = await service.RefreshAsync();
+            WpfMessageBox.Show(this, BuildDiagnosticMessage(snapshot), "局域网诊断", MessageBoxButton.OK, MessageBoxImage.Information);
+        });
+        await RefreshStateAsync();
+    }
+
+    private void OpenApk_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            service.OpenAndroidApkLocation();
+        }
+        catch (Exception ex)
+        {
+            WpfMessageBox.Show(this, ex.Message, "Android APK", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
+    private void OpenInstaller_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            service.OpenWindowsInstallerLocation();
+        }
+        catch (Exception ex)
+        {
+            WpfMessageBox.Show(this, ex.Message, "Windows 安装包", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
     }
 
     private async void Refresh_Click(object sender, RoutedEventArgs e)
@@ -108,14 +145,17 @@ public partial class MainWindow : Window
         StateText.Foreground = statusBrush;
         StateText.Text = StateTextFor(snapshot.State);
         HttpValue.Foreground = snapshot.HealthOk ? good : warn;
-        HttpValue.Text = snapshot.HealthOk ? (snapshot.ControlMode == "cdp" ? "CDP" : "GUI") : "不可用";
+        HttpValue.Text = snapshot.HealthOk ? "正常" : snapshot.State == ServiceState.Running ? "异常" : "离线";
         HttpFootnote.Text = snapshot.HealthOk
             ? (snapshot.ControlMode == "cdp" ? "CDP 无感控制" : "GUI 回退控制")
             : "健康检查不可用";
+        PhoneValue.Foreground = snapshot.HealthOk ? good : warn;
+        PhoneValue.Text = snapshot.HealthOk ? "可扫码" : "待启动";
+        PhoneFootnote.Text = snapshot.HealthOk ? "手机 App/WebView 可连接" : "先启动服务再扫码";
+        PhoneQrStatus.Text = snapshot.HealthOk ? "入口就绪 / 等待手机" : "服务未启动 / 先重启";
+        PhoneQrStatus.Foreground = snapshot.HealthOk ? good : warn;
         PortValue.Text = snapshot.Port.ToString();
-        PortFootnote.Text = "本机入口";
-        ThreadValue.Text = snapshot.ThreadCount?.ToString() ?? "-";
-        ThreadFootnote.Text = snapshot.LatestThreadTitle;
+        PortFootnote.Text = snapshot.Pid.HasValue ? $"PID {snapshot.Pid}" : "等待监听";
         InstallPath.Text = service.ShortInstallDirectory;
         UpdatedAt.Text = "更新于 " + snapshot.LastUpdated.ToString("HH:mm:ss");
         EntryKind.Text = "本机入口";
@@ -129,6 +169,44 @@ public partial class MainWindow : Window
         StartStopButton.Content = snapshot.HealthOk ? "\uE71A 停止" : "\uE768 启动";
     }
 
+    private string BuildDiagnosticMessage(ServiceSnapshot snapshot)
+    {
+        var urls = service.EntryUrls().ToList();
+        var lanUrls = urls.Where(url => !url.Contains("localhost", StringComparison.OrdinalIgnoreCase)).ToList();
+        var androidApkExists = File.Exists(service.AndroidApkPath);
+        var windowsInstallerExists = File.Exists(service.WindowsInstallerPath);
+        var lines = new List<string>
+        {
+            $"服务状态：{StateTextFor(snapshot.State)}",
+            $"健康检查：{(snapshot.HealthOk ? "正常" : "异常/未启动")}",
+            $"控制模式：{(string.IsNullOrWhiteSpace(snapshot.ControlMode) ? "-" : snapshot.ControlMode.ToUpperInvariant())}",
+            $"监听端口：{snapshot.Port}",
+            $"服务 PID：{(snapshot.Pid.HasValue ? snapshot.Pid.Value.ToString() : "-")}",
+            $"手机入口：{(snapshot.HealthOk ? "可扫码连接" : "服务未健康，建议先点“启动/重启服务”")}",
+            "",
+            "可用入口："
+        };
+
+        lines.AddRange(urls.Select(url => "  " + url));
+        if (lanUrls.Count == 0)
+        {
+            lines.Add("  未发现可用局域网 IPv4 地址，请检查 Wi‑Fi/网卡状态。");
+        }
+
+        lines.Add("");
+        lines.Add($"Android APK：{(androidApkExists ? "已生成" : "未找到")}");
+        lines.Add(service.AndroidApkPath);
+        lines.Add($"Windows 安装包：{(windowsInstallerExists ? "已生成" : "未找到")}");
+        lines.Add(service.WindowsInstallerPath);
+        lines.Add("");
+        lines.Add("排查建议：");
+        lines.Add("1. 手机和电脑连接同一个 Wi‑Fi。");
+        lines.Add($"2. Windows 防火墙允许端口 {snapshot.Port} 入站访问。");
+        lines.Add("3. 如果 token 无效，重新扫描控制台二维码。");
+        lines.Add("4. 如果手机打不开，先点“重启服务”，再重新扫码。");
+        return string.Join(Environment.NewLine, lines);
+    }
+
     private async Task RunActionAsync(Func<Task> action)
     {
         SetBusy(true);
@@ -138,7 +216,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            WpfMessageBox.Show(this, ex.Message, "Codex Max", MessageBoxButton.OK, MessageBoxImage.Error);
+            WpfMessageBox.Show(this, ex.Message, "ChatGPT Win", MessageBoxButton.OK, MessageBoxImage.Error);
         }
         finally
         {

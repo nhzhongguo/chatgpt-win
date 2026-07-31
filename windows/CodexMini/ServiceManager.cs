@@ -45,7 +45,9 @@ internal sealed record CdpLaunchSnapshot(
 
 internal sealed class ServiceManager
 {
-    private const string AppName = "Codex Max";
+    private const string DisplayName = "ChatGPT Win";
+    private const string AppDataName = "ChatGPT Win";
+    private const string LegacyAppDataName = "Codex Max";
     private const int DefaultPort = 8787;
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -55,6 +57,7 @@ internal sealed class ServiceManager
 
     private readonly HttpClient http = new() { Timeout = TimeSpan.FromSeconds(2) };
     private readonly string appDataDir;
+    private readonly string legacyAppDataDir;
     private readonly string logsDir;
     private readonly string installDir;
     private readonly string configPath;
@@ -67,7 +70,8 @@ internal sealed class ServiceManager
 
     public ServiceManager()
     {
-        appDataDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), AppName);
+        appDataDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), AppDataName);
+        legacyAppDataDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), LegacyAppDataName);
         logsDir = Path.Combine(appDataDir, "logs");
         installDir = Path.Combine(appDataDir, "service");
         configPath = Path.Combine(appDataDir, "launcher.json");
@@ -81,9 +85,12 @@ internal sealed class ServiceManager
 
     public string ShortInstallDirectory => installDir;
     public string LogsDirectory => logsDir;
+    public string AndroidApkPath => ResolveAndroidApkPath();
+    public string WindowsInstallerPath => ResolveWindowsInstallerPath();
 
     public async Task PrepareIfNeededAsync()
     {
+        MigrateLegacyStateIfNeeded();
         Directory.CreateDirectory(appDataDir);
         Directory.CreateDirectory(logsDir);
         var config = ReadConfig();
@@ -125,23 +132,26 @@ internal sealed class ServiceManager
         await PrepareIfNeededAsync();
         var config = ReadConfig();
         var projectDir = ResolveServiceProjectDir();
+        var serverPath = Path.Combine(projectDir, "server.js");
         var serviceStamp = ComputeServiceStamp(projectDir);
         var healthOk = await CheckHealthAsync(config);
-        if (healthOk && !string.IsNullOrWhiteSpace(config.ServiceStamp) && config.ServiceStamp == serviceStamp) return;
+        if (healthOk && !string.IsNullOrWhiteSpace(config.ServiceStamp) && config.ServiceStamp == serviceStamp && !ServiceProcessNeedsRestart(config.Pid, serverPath)) return;
 
         var existingPid = FindPortOwnerPid(config.Port);
         if (existingPid > 0)
         {
-            if (!IsLikelyCodexMiniService(existingPid))
+            if (existingPid != config.Pid || !IsManagedServiceProcess(existingPid))
             {
-                throw new InvalidOperationException($"端口 {config.Port} 已被其他程序占用（PID {existingPid}），无法启动 Codex Max。");
+                throw new InvalidOperationException(
+                    $"端口 {config.Port} 已被其他程序占用（PID {existingPid}）。" +
+                    $"为避免结束不是本管理端启动的进程，{DisplayName} 已取消启动。"
+                );
             }
 
             await KillProcessTreeAsync(existingPid);
             await Task.Delay(500);
         }
 
-        var serverPath = Path.Combine(projectDir, "server.js");
         if (!File.Exists(serverPath))
         {
             throw new InvalidOperationException("没有找到内嵌服务文件 server.js。");
@@ -160,10 +170,10 @@ internal sealed class ServiceManager
         start.ArgumentList.Add("server.js");
         start.Environment["MOBILE_TYPER_TOKEN"] = config.Token;
         start.Environment["PORT"] = config.Port.ToString();
-        start.Environment["CODEX_MAX_APP_NAME"] = AppName;
+        start.Environment["CODEX_MAX_APP_NAME"] = DisplayName;
         start.Environment["CODEX_MAX_STATE_DIR"] = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".codex-max");
 
-        var process = Process.Start(start) ?? throw new InvalidOperationException("启动 Codex Max 服务失败。");
+        var process = Process.Start(start) ?? throw new InvalidOperationException($"启动 {DisplayName} 服务失败。");
         _ = Task.Run(() => AppendProcessOutputAsync(process.StandardOutput, stdoutPath));
         _ = Task.Run(() => AppendProcessOutputAsync(process.StandardError, stderrPath));
         config.Pid = process.Id;
@@ -176,20 +186,15 @@ internal sealed class ServiceManager
             if (await CheckHealthAsync(config)) return;
         }
 
-        throw new InvalidOperationException("Codex Max 服务启动后没有通过健康检查。" + Environment.NewLine + ReadTail(stderrPath, 1200));
+        throw new InvalidOperationException($"{DisplayName} 服务启动后没有通过健康检查。" + Environment.NewLine + ReadTail(stderrPath, 1200));
     }
 
     public async Task StopAsync()
     {
         var config = ReadConfig();
-        var pids = new HashSet<int>();
-        if (config.Pid > 0) pids.Add(config.Pid);
-        var portPid = FindPortOwnerPid(config.Port);
-        if (portPid > 0) pids.Add(portPid);
-
-        foreach (var pid in pids)
+        if (config.Pid > 0 && IsManagedServiceProcess(config.Pid))
         {
-            await KillProcessTreeAsync(pid);
+            await KillProcessTreeAsync(config.Pid);
         }
 
         config.Pid = 0;
@@ -219,9 +224,9 @@ internal sealed class ServiceManager
         var result = await response.Content.ReadFromJsonAsync<CdpLaunchResponse>(JsonOptions);
         if (!response.IsSuccessStatusCode || result?.Ok != true)
         {
-            throw new InvalidOperationException(result?.Message ?? "启动 CDP 受控 Codex 失败。");
+            throw new InvalidOperationException(result?.Message ?? "启动 CDP 受控 ChatGPT 失败。");
         }
-        return new CdpLaunchSnapshot(true, result.Message ?? "已启动 CDP 受控 Codex");
+        return new CdpLaunchSnapshot(true, result.Message ?? "已启动 CDP 受控 ChatGPT");
     }
 
     public async Task OpenWebAsync()
@@ -240,6 +245,25 @@ internal sealed class ServiceManager
     {
         Directory.CreateDirectory(logsDir);
         Process.Start(new ProcessStartInfo(logsDir) { UseShellExecute = true });
+    }
+
+    private void MigrateLegacyStateIfNeeded()
+    {
+        if (File.Exists(configPath)) return;
+        var legacyConfigPath = Path.Combine(legacyAppDataDir, "launcher.json");
+        if (!File.Exists(legacyConfigPath)) return;
+        Directory.CreateDirectory(appDataDir);
+        File.Copy(legacyConfigPath, configPath, overwrite: false);
+    }
+
+    public void OpenAndroidApkLocation()
+    {
+        OpenArtifactLocation(AndroidApkPath, "没有找到 Android APK。请先构建 Android App。");
+    }
+
+    public void OpenWindowsInstallerLocation()
+    {
+        OpenArtifactLocation(WindowsInstallerPath, "没有找到 Windows 安装包。请先构建 Windows 安装包。");
     }
 
     public string PrimaryEntryUrl()
@@ -393,6 +417,49 @@ internal sealed class ServiceManager
         throw new InvalidOperationException("没有找到 Node.js。请安装 Node.js 18+，或在 App 资源中内置 node.exe。");
     }
 
+    private string ResolveWindowsInstallerPath()
+    {
+        var sourceCandidate = Path.Combine(sourceProjectDir, "dist", "windows", "installer", "ChatGPT-Win-Windows-Setup.exe");
+        if (File.Exists(sourceCandidate)) return sourceCandidate;
+        var baseCandidate = Path.Combine(AppContext.BaseDirectory, "dist", "windows", "installer", "ChatGPT-Win-Windows-Setup.exe");
+        if (File.Exists(baseCandidate)) return baseCandidate;
+        return sourceCandidate;
+    }
+
+    private string ResolveAndroidApkPath()
+    {
+        var releaseCandidate = Path.Combine(sourceProjectDir, "dist", "android", "ChatGPT-AZ-Android-v1.2.0.apk");
+        if (File.Exists(releaseCandidate)) return releaseCandidate;
+        var releaseBuildCandidate = Path.Combine("C:\\", "CodexBuild", "AndroidOutput", "outputs", "apk", "release", "app-release.apk");
+        if (File.Exists(releaseBuildCandidate)) return releaseBuildCandidate;
+        var debugCandidate = Path.Combine("C:\\", "CodexBuild", "AndroidOutput", "outputs", "apk", "debug", "app-debug.apk");
+        if (File.Exists(debugCandidate)) return debugCandidate;
+        return releaseCandidate;
+    }
+
+    private static void OpenArtifactLocation(string file, string missingMessage)
+    {
+        if (File.Exists(file))
+        {
+            var start = new ProcessStartInfo("explorer.exe")
+            {
+                UseShellExecute = true,
+                ArgumentList = { $"/select,{file}" }
+            };
+            Process.Start(start);
+            return;
+        }
+
+        var directory = Path.GetDirectoryName(file);
+        if (!string.IsNullOrWhiteSpace(directory) && Directory.Exists(directory))
+        {
+            Process.Start(new ProcessStartInfo(directory) { UseShellExecute = true });
+            throw new InvalidOperationException($"{missingMessage}{Environment.NewLine}已打开目录：{directory}");
+        }
+
+        throw new InvalidOperationException($"{missingMessage}{Environment.NewLine}{file}");
+    }
+
     private bool ExtractEmbeddedPayloadIfNeeded()
     {
         var assembly = typeof(ServiceManager).Assembly;
@@ -536,17 +603,33 @@ internal sealed class ServiceManager
         return 0;
     }
 
-    private static bool IsLikelyCodexMiniService(int pid)
+    private static bool IsManagedServiceProcess(int pid)
     {
         try
         {
             using var process = Process.GetProcessById(pid);
             var name = process.ProcessName;
+            if (!name.Equals("node", StringComparison.OrdinalIgnoreCase)) return false;
             var commandLine = GetProcessCommandLine(pid);
             if (commandLine.Contains("server.js", StringComparison.OrdinalIgnoreCase)) return true;
             if (commandLine.Contains("CodexMaxProject", StringComparison.OrdinalIgnoreCase)) return true;
+            if (commandLine.Contains("ChatGPT Win", StringComparison.OrdinalIgnoreCase)) return true;
             if (commandLine.Contains("Codex Max", StringComparison.OrdinalIgnoreCase)) return true;
-            return name.Contains("node", StringComparison.OrdinalIgnoreCase);
+            return false;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static bool ServiceProcessNeedsRestart(int pid, string serverPath)
+    {
+        if (pid <= 0 || !File.Exists(serverPath)) return false;
+        try
+        {
+            using var process = Process.GetProcessById(pid);
+            return !process.HasExited && File.GetLastWriteTimeUtc(serverPath) > process.StartTime.ToUniversalTime();
         }
         catch
         {

@@ -1,7 +1,7 @@
 {
-  "name": "Codex mini",
-  "short_name": "Codex mini",
-  "description": "手机端控制本机 Codex 的轻量桥接工具。",
+  "name": "ChatGPT Win",
+  "short_name": "ChatGPT Win",
+  "description": "手机端控制本机 ChatGPT 的轻量桥接工具。",
   "scope": "./",
   "display": "standalone",
   "background_color": "#0d0d0d",

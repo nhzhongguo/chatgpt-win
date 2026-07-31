@@ -1,7 +1,7 @@
-#define MyAppName "Codex Max"
-#define MyAppVersion "3.0.5-win"
+#define MyAppName "ChatGPT Win"
+#define MyAppVersion "3.1.1-win"
 #define MyAppPublisher "Coming Rain"
-#define MyAppExeName "Codex Max.exe"
+#define MyAppExeName "ChatGPT Win.exe"
 
 [Setup]
 AppId={{9E6B36FA-42F5-4C4D-9B98-C377B95EE749}
@@ -12,7 +12,7 @@ DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 OutputDir=..\..\dist\windows\installer
-OutputBaseFilename=Codex-Max-Windows-Setup
+OutputBaseFilename=ChatGPT-Win-Windows-Setup
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
@@ -22,7 +22,7 @@ PrivilegesRequired=lowest
 UninstallDisplayIcon={app}\{#MyAppExeName}
 
 [Files]
-Source: "..\..\dist\windows\Codex Max InstallerPayload\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\..\dist\windows\ChatGPT Win InstallerPayload\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"

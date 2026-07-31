@@ -1947,7 +1947,9 @@ module.exports = function createWin32Platform(env) {
       const current = keepAwakeStatus();
       if (current.enabled) return current;
       const script = `${PS_PREAMBLE}
-        $ES_CONTINUOUS = 0x80000000
+        # PowerShell parses 0x80000000 as Int32 (-2147483648). The P/Invoke
+        # signature expects UInt32, so use the positive decimal value.
+        $ES_CONTINUOUS = [uint32]2147483648
         $ES_SYSTEM_REQUIRED = 0x00000001
         $ES_DISPLAY_REQUIRED = 0x00000002
         [void][CodexMiniWin32]::SetThreadExecutionState($ES_CONTINUOUS -bor $ES_SYSTEM_REQUIRED -bor $ES_DISPLAY_REQUIRED)
@@ -1987,7 +1989,7 @@ module.exports = function createWin32Platform(env) {
         try { child.kill(); } catch {}
       }
       await runPowerShell(`
-        $ES_CONTINUOUS = 0x80000000
+        $ES_CONTINUOUS = [uint32]2147483648
         [void][CodexMiniWin32]::SetThreadExecutionState($ES_CONTINUOUS)
       `);
       return keepAwakeStatus();

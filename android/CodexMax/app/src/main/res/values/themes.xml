@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.CodexMax.Starting" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/background</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/app_icon</item>
+        <item name="windowSplashScreenIconBackgroundColor">@color/surface</item>
+        <item name="windowSplashScreenAnimationDuration">420</item>
+        <item name="postSplashScreenTheme">@style/Theme.CodexMax</item>
+    </style>
+
+    <style name="Theme.CodexMax" parent="Theme.Material3.Dark.NoActionBar">
+        <item name="colorPrimary">@color/primary</item>
+        <item name="colorOnPrimary">@color/background</item>
+        <item name="colorSecondary">@color/secondary</item>
+        <item name="colorTertiary">@color/tertiary</item>
+        <item name="colorError">@color/danger</item>
+        <item name="android:colorAccent">@color/primary</item>
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowBackground">@color/background</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:navigationBarColor">@color/background</item>
+        <item name="android:statusBarColor">@color/background</item>
+        <item name="shapeAppearanceSmallComponent">@style/ShapeAppearance.CodexMax.Small</item>
+        <item name="shapeAppearanceMediumComponent">@style/ShapeAppearance.CodexMax.Medium</item>
+        <item name="shapeAppearanceLargeComponent">@style/ShapeAppearance.CodexMax.Medium</item>
+    </style>
+
+    <style name="Theme.CodexMax.Scanner" parent="Theme.Material3.Dark.NoActionBar">
+        <item name="android:navigationBarColor">@android:color/black</item>
+        <item name="android:statusBarColor">@android:color/black</item>
+        <item name="android:windowBackground">@android:color/black</item>
+    </style>
+
+    <style name="ShapeAppearance.CodexMax.Small" parent="ShapeAppearance.Material3.Corner.Small">
+        <item name="cornerSize">4dp</item>
+    </style>
+
+    <style name="ShapeAppearance.CodexMax.Medium" parent="ShapeAppearance.Material3.Corner.Medium">
+        <item name="cornerSize">8dp</item>
+    </style>
+
+    <style name="Widget.CodexMax.Button.Primary" parent="Widget.Material3.Button">
+        <item name="backgroundTint">@color/primary</item>
+        <item name="android:textColor">@color/background</item>
+        <item name="iconTint">@color/background</item>
+        <item name="cornerRadius">8dp</item>
+    </style>
+
+    <style name="Widget.CodexMax.Button.Secondary" parent="Widget.Material3.Button.OutlinedButton">
+        <item name="android:textColor">@color/secondary</item>
+        <item name="iconTint">@color/secondary</item>
+        <item name="strokeColor">@color/secondary</item>
+        <item name="cornerRadius">8dp</item>
+    </style>
+
+    <style name="Widget.CodexMax.Button.Text" parent="Widget.Material3.Button.TextButton">
+        <item name="android:textColor">@color/text_secondary</item>
+        <item name="iconTint">@color/text_secondary</item>
+        <item name="cornerRadius">8dp</item>
+    </style>
+</resources>

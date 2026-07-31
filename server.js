@@ -2,14 +2,16 @@
 'use strict';
 
 const http = require('http');
+const https = require('https');
 const os = require('os');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 const { spawn } = require('child_process');
 const { URL } = require('url');
+const { CodexAppServer } = require('./src/codex-app-server');
 
-const APP_NAME = process.env.CODEX_MAX_APP_NAME || process.env.CODEX_MINI_APP_NAME || 'Codex Max';
+const APP_NAME = process.env.CODEX_MAX_APP_NAME || process.env.CODEX_MINI_APP_NAME || 'ChatGPT Win';
 const PORT = Number(process.env.PORT || 8787);
 const HOST = process.env.HOST || '0.0.0.0';
 const TOKEN = process.env.MOBILE_TYPER_TOKEN || crypto.randomBytes(12).toString('base64url');
@@ -19,8 +21,11 @@ const MAX_TEXT_LENGTH = 8000;
 const MAX_ATTACHMENTS = 6;
 const MAX_ATTACHMENT_BYTES = Number(process.env.CODEX_MAX_MAX_ATTACHMENT_BYTES || process.env.CODEX_MINI_MAX_ATTACHMENT_BYTES || 8 * 1024 * 1024);
 const UPLOAD_DIR = path.join(os.tmpdir(), 'codex-max-uploads');
+const HISTORY_ATTACHMENT_TTL_MS = 60 * 60 * 1000;
+const HISTORY_ATTACHMENT_LIMIT = 600;
 const STATE_DIR = process.env.CODEX_MAX_STATE_DIR || process.env.CODEX_MINI_STATE_DIR || path.join(os.homedir(), '.codex-max');
 const STATE_FILE = path.join(STATE_DIR, 'state.json');
+const codexAppServer = new CodexAppServer({ cwd: __dirname });
 
 const CODEX_SESSIONS_DIR = path.join(os.homedir(), '.codex', 'sessions');
 const CODEX_SESSION_INDEX = path.join(os.homedir(), '.codex', 'session_index.jsonl');
@@ -37,6 +42,15 @@ const CODEX_HISTORY_TAIL_BYTES = 128 * 1024 * 1024;
 const CODEX_TITLE_SCAN_BYTES = 12 * 1024 * 1024;
 const MAX_HISTORY_MESSAGES = 120;
 const GUI_FAILURE_REPORT_LIMIT = 80;
+const SCHEDULED_TASK_LIMIT = 64;
+const SCHEDULED_TASK_MIN_INTERVAL_MINUTES = 5;
+const SCHEDULED_TASK_MAX_INTERVAL_MINUTES = 7 * 24 * 60;
+const SCHEDULED_TASK_POLL_MS = 30000;
+const GITHUB_REQUEST_TIMEOUT_MS = 10000;
+const GITHUB_RESPONSE_MAX_BYTES = 2 * 1024 * 1024;
+const ENVIRONMENT_MAX_FILES = 80;
+const ENVIRONMENT_MAX_BRANCHES = 80;
+const ENVIRONMENT_MAX_UNTRACKED_TEXT_BYTES = 1024 * 1024;
 const GUI_FAILURE_LOG_SCAN_BYTES = 2 * 1024 * 1024;
 const GUI_FAILURE_LOG_RECENT_MS = 15 * 60 * 1000;
 const RECENT_SEND_TTL_MS = 5 * 60 * 1000;
@@ -58,7 +72,18 @@ const REASONING_MODE_TARGETS = {
   medium: { key: 'medium', value: 'medium', label: '中', displayName: '中' },
   high: { key: 'high', value: 'high', label: '高', displayName: '高' },
   xhigh: { key: 'xhigh', value: 'xhigh', label: '超高', displayName: '超高' },
+  max: { key: 'max', value: 'max', label: '最高', displayName: '最高' },
+  ultra: { key: 'ultra', value: 'ultra', label: '极致', displayName: '极致' },
 };
+const DESKTOP_MODEL_OPTIONS = [
+  { key: 'gpt-5.6-sol', id: 'gpt-5.6-sol', label: '5.6 Sol', displayName: '5.6 Sol', source: 'desktop' },
+  { key: 'gpt-5.6-terra', id: 'gpt-5.6-terra', label: '5.6 Terra', displayName: '5.6 Terra', source: 'desktop' },
+  { key: 'gpt-5.6-luna', id: 'gpt-5.6-luna', label: '5.6 Luna', displayName: '5.6 Luna', source: 'desktop' },
+  { key: 'gpt-5.5', id: 'gpt-5.5', label: '5.5', displayName: '5.5', source: 'desktop' },
+  { key: 'gpt-5.4', id: 'gpt-5.4', label: '5.4', displayName: '5.4', source: 'desktop' },
+  { key: 'gpt-5.4-mini', id: 'gpt-5.4-mini', label: '5.4 Mini', displayName: '5.4 Mini', source: 'desktop' },
+  { key: 'gpt-5.2', id: 'gpt-5.2', label: '5.2', displayName: '5.2', source: 'desktop' },
+];
 const recentSendRequests = new Map();
 let lastCodexThreadActivation = { threadId: '', at: 0 };
 let codexSessionFilesCache = { at: 0, files: [] };
@@ -70,6 +95,10 @@ const codexThreadListCache = new Map();
 let modelCatalogCache = { mtimeMs: -1, path: '', models: null };
 let keepAwakeProcess = null;
 let keepAwakeStartedAt = '';
+let scheduledTaskTimer = null;
+const scheduledTaskRuns = new Set();
+const pullRequestCache = new Map();
+const historyAttachmentCache = new Map();
 
 function fileCacheSignature(stat) {
   return stat ? `${stat.size}:${stat.mtimeMs}` : '';
@@ -146,13 +175,32 @@ function normalizeModelOption(row = {}) {
   };
 }
 
+function mergeModelOptions(...lists) {
+  const rows = [];
+  const indexes = new Map();
+  for (const list of lists) {
+    for (const item of Array.isArray(list) ? list : []) {
+      const id = String(item?.id || item?.key || '').trim();
+      if (!id) continue;
+      const option = { ...item, key: String(item.key || id), id };
+      if (indexes.has(id)) rows[indexes.get(id)] = { ...rows[indexes.get(id)], ...option };
+      else {
+        indexes.set(id, rows.length);
+        rows.push(option);
+      }
+    }
+  }
+  return rows;
+}
+
 function readModelCatalogOptions() {
   const configText = readCodexConfigText();
   const catalogPath = tomlStringValue(configText, 'model_catalog_json');
   const resolvedPath = catalogPath.startsWith('~') ? path.join(os.homedir(), catalogPath.slice(1)) : catalogPath;
   const fallback = () => {
     const current = tomlStringValue(configText, 'model');
-    return current ? [{ key: current, id: current, label: labelFromModelName(current), displayName: current, source: 'local' }] : [];
+    const currentOption = current ? [{ key: current, id: current, label: labelFromModelName(current), displayName: current, source: 'local' }] : [];
+    return mergeModelOptions(DESKTOP_MODEL_OPTIONS, currentOption);
   };
   if (!resolvedPath) return fallback();
   let stat;
@@ -171,7 +219,7 @@ function readModelCatalogOptions() {
       .map(normalizeModelOption)
       .filter(Boolean);
     modelCatalogCache = { path: resolvedPath, mtimeMs: stat.mtimeMs, models };
-    return models.length ? models : fallback();
+    return models.length ? mergeModelOptions(DESKTOP_MODEL_OPTIONS, models) : fallback();
   } catch {
     return fallback();
   }
@@ -189,6 +237,7 @@ function emptyCodexMiniState() {
     archivedThreadIds: [],
     titleOverrides: {},
     guiFailureReports: {},
+    scheduledTasks: [],
   };
 }
 
@@ -200,6 +249,7 @@ function readCodexMiniState() {
       archivedThreadIds: Array.isArray(parsed.archivedThreadIds) ? parsed.archivedThreadIds.filter(isCodexThreadId) : [],
       titleOverrides: parsed.titleOverrides && typeof parsed.titleOverrides === 'object' ? parsed.titleOverrides : {},
       guiFailureReports: normalizeGuiFailureReports(parsed.guiFailureReports),
+      scheduledTasks: normalizeScheduledTasks(parsed.scheduledTasks),
     };
   } catch {
     return emptyCodexMiniState();
@@ -213,6 +263,7 @@ function writeCodexMiniState(state) {
     archivedThreadIds: [...new Set((state.archivedThreadIds || []).filter(isCodexThreadId))],
     titleOverrides: state.titleOverrides && typeof state.titleOverrides === 'object' ? state.titleOverrides : {},
     guiFailureReports: normalizeGuiFailureReports(state.guiFailureReports),
+    scheduledTasks: normalizeScheduledTasks(state.scheduledTasks),
   };
   fs.writeFileSync(STATE_FILE, `${JSON.stringify(normalized, null, 2)}\n`, 'utf8');
   invalidateCodexThreadListCache();
@@ -239,6 +290,62 @@ function normalizeGuiFailureReports(value) {
     if (normalizedRows.length) out[threadId] = normalizedRows;
   }
   return out;
+}
+
+function normalizeIsoTimestamp(value) {
+  const ms = Date.parse(String(value || ''));
+  return Number.isFinite(ms) ? new Date(ms).toISOString() : '';
+}
+
+function normalizeScheduleInterval(value) {
+  const minutes = Math.round(Number(value));
+  if (!Number.isFinite(minutes)) return 60;
+  return Math.max(SCHEDULED_TASK_MIN_INTERVAL_MINUTES, Math.min(SCHEDULED_TASK_MAX_INTERVAL_MINUTES, minutes));
+}
+
+function normalizeScheduledTask(row = {}) {
+  if (!row || typeof row !== 'object') return null;
+  const id = String(row.id || '').trim();
+  const prompt = String(row.prompt || '').trim();
+  if (!/^[a-zA-Z0-9_-]{8,80}$/.test(id) || !prompt) return null;
+  const runMode = row.runMode === 'thread' ? 'thread' : 'standalone';
+  const threadId = isCodexThreadId(row.threadId) ? String(row.threadId) : '';
+  if (runMode === 'thread' && !threadId) return null;
+  const intervalMinutes = normalizeScheduleInterval(row.intervalMinutes);
+  const now = new Date();
+  return {
+    id,
+    prompt: prompt.slice(0, MAX_TEXT_LENGTH),
+    cwd: String(row.cwd || '').trim().slice(0, 2000),
+    threadId: runMode === 'thread' ? threadId : '',
+    runMode,
+    intervalMinutes,
+    enabled: row.enabled !== false,
+    createdAt: normalizeIsoTimestamp(row.createdAt) || now.toISOString(),
+    updatedAt: normalizeIsoTimestamp(row.updatedAt) || now.toISOString(),
+    nextRunAt: normalizeIsoTimestamp(row.nextRunAt) || new Date(now.getTime() + intervalMinutes * 60000).toISOString(),
+    lastRunAt: normalizeIsoTimestamp(row.lastRunAt),
+    lastStatus: ['idle', 'running', 'started', 'skipped', 'error'].includes(row.lastStatus) ? row.lastStatus : 'idle',
+    lastMessage: truncateText(row.lastMessage || '', 500),
+    lastThreadId: isCodexThreadId(row.lastThreadId) ? String(row.lastThreadId) : '',
+  };
+}
+
+function normalizeScheduledTasks(value) {
+  const seen = new Set();
+  const rows = Array.isArray(value) ? value : [];
+  return rows
+    .map(normalizeScheduledTask)
+    .filter(item => item && !seen.has(item.id) && seen.add(item.id))
+    .slice(0, SCHEDULED_TASK_LIMIT)
+    .sort((a, b) => Date.parse(a.nextRunAt) - Date.parse(b.nextRunAt));
+}
+
+function nextScheduledRunAt(task, nowMs = Date.now()) {
+  const intervalMs = normalizeScheduleInterval(task.intervalMinutes) * 60000;
+  const previous = Date.parse(task.nextRunAt || '');
+  const base = Number.isFinite(previous) ? previous : nowMs;
+  return new Date(Math.max(nowMs + intervalMs, base + intervalMs)).toISOString();
 }
 
 function setThreadSetMembership(list, threadId, enabled) {
@@ -535,6 +642,7 @@ function isPlaceholderThreadName(value) {
   if (!text) return true;
   return [
     '未命名线程',
+    '未命名任务',
     '未命名',
     'untitled',
     'untitled thread',
@@ -1005,7 +1113,7 @@ function classifyThreadProject(cwd) {
     relativeToScratch &&
     !relativeToScratch.startsWith('..') &&
     !path.isAbsolute(relativeToScratch) &&
-    /^\d{4}-\d{2}-\d{2}(?:$|[\/])/.test(relativeToScratch)
+    /^\d{4}-\d{2}-\d{2}(?:$|[\\/])/.test(relativeToScratch)
   );
 
   if (!normalized || isGeneratedProjectless) {
@@ -1046,7 +1154,7 @@ function listCodexThreads(limit = 80) {
       const project = classifyThreadProject(meta.cwd || '');
       const existing = byId.get(id) || { id, name: '', updatedAt: '' };
       const fallbackName = isPlaceholderThreadName(existing.name) ? findFirstCodexUserMessage(file) : '';
-      existing.name = isPlaceholderThreadName(existing.name) ? (fallbackName || '未命名线程') : existing.name;
+      existing.name = isPlaceholderThreadName(existing.name) ? (fallbackName || '未命名任务') : existing.name;
       existing.nameSource = fallbackName && existing.name === fallbackName ? 'first_user_message' : 'index';
       const override = titleOverrides[id];
       if (override && typeof override.name === 'string' && override.name.trim()) {
@@ -1087,11 +1195,751 @@ function listCodexThreads(limit = 80) {
   return threads;
 }
 
-function handleThreads(req, res) {
+function listArchivedCodexThreads(limit = 80) {
+  const normalizedLimit = Math.max(1, Math.min(160, Number(limit) || 80));
+  const miniState = readCodexMiniState();
+  const archivedThreadIds = [...new Set((miniState.archivedThreadIds || []).filter(isCodexThreadId))];
+  if (!archivedThreadIds.length) return [];
+  const archivedSet = new Set(archivedThreadIds);
+  const titleOverrides = miniState.titleOverrides || {};
+  const byId = readThreadIndex();
+  for (const file of listCodexSessionFiles()) {
+    const match = path.basename(file).match(/([a-f0-9]{8}-[a-f0-9-]{27,})\.jsonl$/i);
+    if (!match || !archivedSet.has(match[1])) continue;
+    const id = match[1];
+    try {
+      const stat = fs.statSync(file);
+      const meta = readSessionMeta(file);
+      const runtime = quickCodexRuntimeFromFile(file, stat);
+      const project = classifyThreadProject(meta.cwd || '');
+      const existing = byId.get(id) || { id, name: '', updatedAt: '' };
+      const fallbackName = isPlaceholderThreadName(existing.name) ? findFirstCodexUserMessage(file) : '';
+      existing.name = isPlaceholderThreadName(existing.name) ? (fallbackName || '未命名任务') : existing.name;
+      const override = titleOverrides[id];
+      if (override && typeof override.name === 'string' && override.name.trim()) existing.name = override.name.trim();
+      existing.sessionFile = path.basename(file);
+      existing.mtimeMs = stat.mtimeMs;
+      existing.updatedAt = existing.updatedAt || meta.timestamp || new Date(stat.mtimeMs).toISOString();
+      existing.effectiveUpdatedMs = Math.max(Date.parse(existing.updatedAt) || 0, stat.mtimeMs || 0);
+      existing.cwd = meta.cwd || '';
+      existing.source = meta.source || '';
+      existing.threadSource = meta.thread_source || '';
+      existing.runtimeStatus = runtime.status;
+      existing.runtimeActive = runtime.active;
+      Object.assign(existing, project);
+      byId.set(id, existing);
+    } catch {}
+  }
+  return archivedThreadIds
+    .map(id => {
+      const item = byId.get(id) || { id, name: '已归档任务', updatedAt: '', effectiveUpdatedMs: 0 };
+      const project = item.projectName ? {} : classifyThreadProject(item.cwd || '');
+      const effectiveUpdatedMs = item.effectiveUpdatedMs || Math.max(Date.parse(item.updatedAt) || 0, item.mtimeMs || 0);
+      return { ...item, ...project, archived: true, effectiveUpdatedMs, effectiveUpdatedAt: effectiveUpdatedMs ? new Date(effectiveUpdatedMs).toISOString() : '' };
+    })
+    .sort((a, b) => b.effectiveUpdatedMs - a.effectiveUpdatedMs)
+    .slice(0, normalizedLimit);
+}
+
+function appServerThreadRuntimeStatus(status = {}) {
+  if (status.type === 'active') return { status: 'running', active: true };
+  if (status.type === 'systemError') return { status: 'error', active: false };
+  return { status: 'idle', active: false };
+}
+
+function normalizeAppServerThreads(rows = []) {
+  const miniState = readCodexMiniState();
+  const pinnedThreadIds = new Set(miniState.pinnedThreadIds || []);
+  const titleOverrides = miniState.titleOverrides || {};
+  return rows.map(row => {
+    const updatedMs = Math.max(0, Number(row.recencyAt || row.updatedAt || row.createdAt || 0) * 1000);
+    const updatedAt = updatedMs ? new Date(updatedMs).toISOString() : '';
+    const cwd = String(row.cwd || '');
+    const project = classifyThreadProject(cwd);
+    const runtime = appServerThreadRuntimeStatus(row.status || {});
+    const overrideName = String(titleOverrides[row.id]?.name || '').trim();
+    const previewName = summarizeThreadTitle(cleanUserHistoryText(row.preview || ''), 50);
+    const name = String(row.name || overrideName || previewName || '未命名任务').trim();
+    return {
+      id: row.id,
+      name,
+      nameSource: row.name ? 'app_server' : overrideName ? 'local_override' : 'preview',
+      preview: row.preview || '',
+      sessionFile: row.path ? path.basename(row.path) : '',
+      cwd,
+      source: typeof row.source === 'string' ? row.source : JSON.stringify(row.source || {}),
+      threadSource: typeof row.threadSource === 'string' ? row.threadSource : JSON.stringify(row.threadSource || {}),
+      updatedAt,
+      effectiveUpdatedAt: updatedAt,
+      effectiveUpdatedMs: updatedMs,
+      runtimeStatus: runtime.status,
+      runtimeActive: runtime.active,
+      runtimeStartedAt: '',
+      runtimeCompletedAt: '',
+      runtimeUpdatedAt: updatedAt,
+      runtimeTurnId: codexAppServer.runtimeForThread(row.id)?.activeTurnId || '',
+      pinned: typeof row.isPinned === 'boolean' ? row.isPinned : pinnedThreadIds.has(row.id),
+      canAcceptDirectInput: row.canAcceptDirectInput,
+      ...project,
+    };
+  }).sort((a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)) || b.effectiveUpdatedMs - a.effectiveUpdatedMs);
+}
+
+async function handleThreads(req, res) {
   if (!isAuthorized(req)) return json(res, 401, { ok: false, code: 'UNAUTHORIZED', message: '访问令牌不正确。' });
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   const limit = Math.max(1, Math.min(160, Number(url.searchParams.get('limit')) || 80));
-  return json(res, 200, { ok: true, threads: listCodexThreads(limit) });
+  try {
+    const rows = await codexAppServer.listThreads({ limit });
+    const threads = normalizeAppServerThreads(rows).slice(0, limit);
+    return json(res, 200, {
+      ok: true,
+      transport: 'app-server',
+      threads,
+      ...activeDesktopThreadHint(threads),
+    });
+  } catch (error) {
+    const threads = listCodexThreads(limit);
+    return json(res, 200, {
+      ok: true,
+      transport: 'session-files',
+      appServerError: error.message || String(error),
+      threads,
+      ...activeDesktopThreadHint(threads),
+    });
+  }
+}
+
+function activeDesktopThreadHint(threads = []) {
+  const activeThreads = threads
+    .filter(item => item && item.id && (item.runtimeActive || item.runtimeStatus === 'running'))
+    .sort((left, right) => (Date.parse(right.runtimeUpdatedAt || right.updatedAt || '') || 0)
+      - (Date.parse(left.runtimeUpdatedAt || left.updatedAt || '') || 0));
+  if (activeThreads.length) {
+    return { activeThreadId: activeThreads[0].id, activeThreadSource: 'running-thread' };
+  }
+
+  // Session records are updated by the desktop app while it is producing a turn.
+  // Do not use an idle recent record, otherwise browsing an older mobile task would be overwritten.
+  const latestFile = findLatestCodexSessionFile();
+  if (!latestFile) return { activeThreadId: '', activeThreadSource: '' };
+  try {
+    const stat = fs.statSync(latestFile);
+    const runtime = quickCodexRuntimeFromFile(latestFile, stat);
+    const threadId = threadIdFromSessionFile(latestFile);
+    if (threadId && runtime.active && threads.some(item => item.id === threadId)) {
+      return { activeThreadId: threadId, activeThreadSource: 'active-session' };
+    }
+  } catch {
+    // A session file can rotate while the list endpoint is being assembled.
+  }
+  return { activeThreadId: '', activeThreadSource: '' };
+}
+
+async function handleArchivedThreads(req, res) {
+  if (!isAuthorized(req)) return json(res, 401, { ok: false, code: 'UNAUTHORIZED', message: '访问令牌不正确。' });
+  const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+  const limit = Math.max(1, Math.min(160, Number(url.searchParams.get('limit')) || 80));
+  return json(res, 200, {
+    ok: true,
+    transport: 'local-state',
+    threads: listArchivedCodexThreads(limit),
+  });
+}
+
+async function listWorkspaceThreads(limit = 160) {
+  try {
+    const rows = await codexAppServer.listThreads({ limit });
+    return { transport: 'app-server', threads: normalizeAppServerThreads(rows).slice(0, limit) };
+  } catch (error) {
+    return {
+      transport: 'session-files',
+      appServerError: error.message || String(error),
+      threads: listCodexThreads(limit),
+    };
+  }
+}
+
+function existingProjectCwds(threads = []) {
+  const values = [__dirname, ...threads.map(item => item?.projectPath || item?.cwd || '')];
+  const found = new Set();
+  for (const value of values) {
+    const cwd = String(value || '').trim();
+    if (!cwd || found.has(cwd)) continue;
+    try {
+      if (fs.statSync(cwd).isDirectory()) found.add(cwd);
+    } catch {}
+  }
+  return [...found].slice(0, 20);
+}
+
+function normalizePluginRows(payload = {}) {
+  const plugins = [];
+  const marketplaces = Array.isArray(payload?.marketplaces) ? payload.marketplaces : [];
+  for (const marketplace of marketplaces) {
+    const marketplaceName = String(marketplace?.interface?.displayName || marketplace?.name || '插件市场').trim();
+    for (const plugin of Array.isArray(marketplace?.plugins) ? marketplace.plugins : []) {
+      if (!plugin || !plugin.id) continue;
+      const details = plugin.interface && typeof plugin.interface === 'object' ? plugin.interface : {};
+      plugins.push({
+        id: String(plugin.id),
+        name: String(details.displayName || plugin.name || plugin.id),
+        description: String(details.shortDescription || ''),
+        category: String(details.category || ''),
+        marketplace: marketplaceName,
+        installed: plugin.installed === true,
+        enabled: plugin.enabled === true,
+        availability: String(plugin.availability || ''),
+        version: String(plugin.localVersion || plugin.version || ''),
+        brandColor: /^#[0-9a-f]{6}$/i.test(String(details.brandColor || '')) ? String(details.brandColor) : '',
+      });
+    }
+  }
+  return plugins.sort((a, b) => Number(b.installed) - Number(a.installed) || a.name.localeCompare(b.name, 'zh-CN'));
+}
+
+function normalizeSkillRows(rows = []) {
+  const skills = [];
+  const seen = new Set();
+  for (const row of rows) {
+    for (const skill of Array.isArray(row?.skills) ? row.skills : []) {
+      const name = String(skill?.name || '').trim();
+      if (!name || seen.has(name)) continue;
+      seen.add(name);
+      const details = skill.interface && typeof skill.interface === 'object' ? skill.interface : {};
+      skills.push({
+        name,
+        displayName: String(details.displayName || name),
+        description: String(details.shortDescription || skill.description || ''),
+        enabled: skill.enabled !== false,
+        scope: String(skill.scope || ''),
+      });
+    }
+  }
+  return skills.sort((a, b) => a.displayName.localeCompare(b.displayName, 'zh-CN'));
+}
+
+function normalizeAppRows(rows = []) {
+  return rows
+    .filter(row => row && row.id)
+    .map(row => ({
+      id: String(row.id),
+      name: String(row.name || row.id),
+      description: String(row.description || ''),
+      accessible: row.isAccessible === true,
+      enabled: row.isEnabled === true,
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'));
+}
+
+function normalizeTomlKey(raw = '') {
+  const value = String(raw || '').trim();
+  if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+    return value.slice(1, -1);
+  }
+  return value;
+}
+
+function listConfiguredMcpServers() {
+  try {
+    const configPath = path.join(os.homedir(), '.codex', 'config.toml');
+    const text = fs.readFileSync(configPath, 'utf8');
+    const seen = new Set();
+    const servers = [];
+    for (const match of text.matchAll(/^\s*\[mcp_servers\.([^\]\r\n]+)\]\s*$/gm)) {
+      const name = normalizeTomlKey(match[1]);
+      if (name.includes('.')) continue;
+      if (!name || seen.has(name)) continue;
+      seen.add(name);
+      servers.push({ name, enabled: true, source: 'config' });
+    }
+    return servers.sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'));
+  } catch {
+    return [];
+  }
+}
+
+async function handlePlugins(req, res) {
+  if (!isAuthorized(req)) return json(res, 401, { ok: false, code: 'UNAUTHORIZED', message: '访问令牌不正确。' });
+  const workspace = await listWorkspaceThreads(160);
+  const cwds = existingProjectCwds(workspace.threads);
+  const results = await Promise.allSettled([
+    codexAppServer.listPlugins(),
+    codexAppServer.listSkills(cwds, { forceReload: false }),
+    codexAppServer.listApps({ forceRefetch: false }),
+  ]);
+  const [pluginResult, skillResult, appResult] = results;
+  const errors = results
+    .filter(result => result.status === 'rejected')
+    .map(result => result.reason?.message || String(result.reason || '读取失败'));
+  return json(res, 200, {
+    ok: true,
+    transport: 'app-server',
+    projectCwds: cwds.map(cwd => ({ cwd, name: displayPathName(cwd) })),
+    plugins: pluginResult.status === 'fulfilled' ? normalizePluginRows(pluginResult.value) : [],
+    skills: skillResult.status === 'fulfilled' ? normalizeSkillRows(skillResult.value) : [],
+    apps: appResult.status === 'fulfilled' ? normalizeAppRows(appResult.value) : [],
+    mcpServers: listConfiguredMcpServers(),
+    errors,
+  });
+}
+
+function runLocalCommand(command, args, options = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+      cwd: options.cwd || undefined,
+      windowsHide: true,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let stdout = '';
+    let stderr = '';
+    let settled = false;
+    const finish = (error, result) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (error) reject(error);
+      else resolve(result);
+    };
+    const timer = setTimeout(() => {
+      try { child.kill(); } catch {}
+      finish(new Error(`${command} 命令超时。`));
+    }, Math.max(1000, Number(options.timeoutMs) || 8000));
+    child.stdout.on('data', chunk => { stdout += String(chunk || ''); });
+    child.stderr.on('data', chunk => { stderr += String(chunk || ''); });
+    child.on('error', error => finish(error));
+    child.on('close', code => {
+      if (code === 0) return finish(null, { stdout, stderr });
+      const error = new Error(stderr.trim() || `${command} exited with code ${code}`);
+      error.code = code;
+      finish(error);
+    });
+  });
+}
+
+function parseGitStatusRows(output = '') {
+  return String(output || '')
+    .split(/\r?\n/)
+    .map(line => line.trimEnd())
+    .filter(Boolean)
+    .slice(0, ENVIRONMENT_MAX_FILES)
+    .map(line => {
+      const status = line.slice(0, 2).trim() || '?';
+      const pathText = line.slice(3).trim() || line.trim();
+      return { status, path: pathText };
+    });
+}
+
+function parseGitNumstat(output = '') {
+  return String(output || '').split(/\r?\n/).reduce((summary, line) => {
+    const match = line.match(/^(\d+|-)\s+(\d+|-)\s+(.+)$/);
+    if (!match) return summary;
+    summary.additions += match[1] === '-' ? 0 : Number(match[1]);
+    summary.deletions += match[2] === '-' ? 0 : Number(match[2]);
+    summary.files += 1;
+    return summary;
+  }, { additions: 0, deletions: 0, files: 0 });
+}
+
+function countGitStatusRows(output = '') {
+  return String(output || '').split(/\r?\n/).filter(Boolean).length;
+}
+
+function countTextFileLines(buffer) {
+  if (!buffer?.length || buffer.includes(0)) return null;
+  let lines = 0;
+  for (const byte of buffer) {
+    if (byte === 10) lines += 1;
+  }
+  return buffer[buffer.length - 1] === 10 ? lines : lines + 1;
+}
+
+async function readUntrackedGitChanges(root) {
+  let output = '';
+  try {
+    const result = await runLocalCommand('git', ['-C', root, 'ls-files', '--others', '--exclude-standard', '-z'], { timeoutMs: 10000 });
+    output = String(result.stdout || '');
+  } catch {
+    return { additions: 0, files: 0 };
+  }
+
+  const resolvedRoot = path.resolve(root);
+  const rootPrefix = `${resolvedRoot}${path.sep}`;
+  return output.split('\0').reduce((summary, relativePath) => {
+    if (!relativePath) return summary;
+    const absolutePath = path.resolve(resolvedRoot, relativePath);
+    if (!absolutePath.startsWith(rootPrefix)) return summary;
+    try {
+      const stat = fs.lstatSync(absolutePath);
+      if (!stat.isFile() || stat.isSymbolicLink() || stat.size > ENVIRONMENT_MAX_UNTRACKED_TEXT_BYTES) return summary;
+      const lines = countTextFileLines(fs.readFileSync(absolutePath));
+      if (lines === null) return summary;
+      summary.additions += lines;
+      summary.files += 1;
+    } catch {
+      // A file can disappear while Git status is being collected.
+    }
+    return summary;
+  }, { additions: 0, files: 0 });
+}
+
+function normalizeGitBranch(value = '') {
+  const branch = String(value || '').trim();
+  if (!branch || branch.length > 240 || branch.startsWith('-')) return '';
+  try {
+    if (branch.includes('..') || branch.includes('\\0')) return '';
+    return branch;
+  } catch {
+    return '';
+  }
+}
+
+async function readGitEnvironment(cwd, compareBranch = '') {
+  const environment = {
+    cwd,
+    name: displayPathName(cwd),
+    git: {
+      available: false,
+      branch: '',
+      remote: '',
+      changes: { additions: 0, deletions: 0, files: 0 },
+      files: [],
+      branches: [],
+      localBranches: [],
+      lastCommit: null,
+    },
+    compare: null,
+  };
+  let root;
+  try {
+    const result = await runLocalCommand('git', ['-C', cwd, 'rev-parse', '--show-toplevel'], { timeoutMs: 8000 });
+    root = String(result.stdout || '').trim();
+  } catch {
+    return environment;
+  }
+  if (!root) return environment;
+
+  const results = await Promise.allSettled([
+    runLocalCommand('git', ['-C', root, 'branch', '--show-current'], { timeoutMs: 8000 }),
+    runLocalCommand('git', ['-C', root, 'remote', 'get-url', 'origin'], { timeoutMs: 8000 }),
+    runLocalCommand('git', ['-C', root, 'status', '--short'], { timeoutMs: 8000 }),
+    runLocalCommand('git', ['-C', root, 'diff', '--numstat', 'HEAD'], { timeoutMs: 10000 }),
+    readUntrackedGitChanges(root),
+    runLocalCommand('git', ['-C', root, 'for-each-ref', '--format=%(refname:short)', 'refs/heads', 'refs/remotes'], { timeoutMs: 8000 }),
+    runLocalCommand('git', ['-C', root, 'for-each-ref', '--format=%(refname:short)', 'refs/heads'], { timeoutMs: 8000 }),
+    runLocalCommand('git', ['-C', root, 'log', '-1', '--format=%H%x00%s%x00%an%x00%ad', '--date=iso-strict'], { timeoutMs: 8000 }),
+  ]);
+  const valueAt = index => results[index]?.status === 'fulfilled' ? String(results[index].value.stdout || '').trim() : '';
+  const commitParts = valueAt(6).split('\\0');
+  const branches = valueAt(5).split(/\r?\n/).map(normalizeGitBranch).filter(Boolean);
+  const localBranches = valueAt(7).split(/\r?\n/).map(normalizeGitBranch).filter(Boolean);
+  const trackedChanges = parseGitNumstat(valueAt(3));
+  const untrackedChanges = results[4]?.status === 'fulfilled' ? results[4].value : { additions: 0, files: 0 };
+  environment.git = {
+    available: true,
+    root,
+    branch: valueAt(0),
+    remote: valueAt(1),
+    changes: {
+      additions: trackedChanges.additions + (Number(untrackedChanges?.additions) || 0),
+      deletions: trackedChanges.deletions,
+      files: Math.max(trackedChanges.files, countGitStatusRows(valueAt(2))),
+    },
+    files: parseGitStatusRows(valueAt(2)),
+    branches: [...new Set(branches)].slice(0, ENVIRONMENT_MAX_BRANCHES),
+    localBranches: [...new Set(localBranches)].slice(0, ENVIRONMENT_MAX_BRANCHES),
+    lastCommit: commitParts[0] ? {
+      hash: commitParts[0],
+      subject: commitParts[1] || '',
+      author: commitParts[2] || '',
+      date: commitParts[3] || '',
+    } : null,
+  };
+
+  const compare = normalizeGitBranch(compareBranch);
+  if (compare && environment.git.branches.includes(compare) && compare !== environment.git.branch) {
+    const compareResults = await Promise.allSettled([
+      runLocalCommand('git', ['-C', root, 'diff', '--numstat', `HEAD..${compare}`], { timeoutMs: 10000 }),
+      runLocalCommand('git', ['-C', root, 'log', '-1', '--format=%H%x00%s%x00%ad', '--date=iso-strict', compare], { timeoutMs: 8000 }),
+    ]);
+    const compareStat = compareResults[0]?.status === 'fulfilled' ? parseGitNumstat(compareResults[0].value.stdout) : null;
+    const compareCommit = compareResults[1]?.status === 'fulfilled' ? String(compareResults[1].value.stdout || '').trim().split('\\0') : [];
+    environment.compare = {
+      branch: compare,
+      changes: compareStat || { additions: 0, deletions: 0, files: 0 },
+      lastCommit: compareCommit[0] ? { hash: compareCommit[0], subject: compareCommit[1] || '', date: compareCommit[2] || '' } : null,
+    };
+  }
+  return environment;
+}
+
+async function handleEnvironment(req, res) {
+  if (!isAuthorized(req)) return json(res, 401, { ok: false, code: 'UNAUTHORIZED', message: '访问令牌不正确。' });
+  const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+  let workspace = { threads: [] };
+  try { workspace = await listWorkspaceThreads(160); } catch {}
+  const projects = existingProjectCwds(workspace.threads);
+  const requestedCwd = String(url.searchParams.get('cwd') || '').trim();
+  const cwd = requestedCwd && projects.includes(requestedCwd) ? requestedCwd : (projects[0] || __dirname);
+  const compareBranch = url.searchParams.get('compare') || '';
+  const gitEnvironment = await readGitEnvironment(cwd, compareBranch);
+  const git = gitEnvironment.git || { available: false, branches: [], files: [], changes: { additions: 0, deletions: 0, files: 0 } };
+  let cdp = null;
+  if (platform.cdpStatus) {
+    try { cdp = await platform.cdpStatus(); } catch (error) { cdp = { available: false, code: error.code || 'CDP_STATUS_FAILED', message: error.message || '浏览器状态读取失败。' }; }
+  }
+  const appServer = codexAppServer.status();
+  const processes = [
+    { id: `node-${process.pid}`, label: `${APP_NAME} 服务`, command: 'node server.js', pid: process.pid, status: 'running', cwd: __dirname },
+  ];
+  if (appServer.pid) processes.push({ id: `codex-${appServer.pid}`, label: 'Codex App Server', command: appServer.executable || 'codex', pid: appServer.pid, status: appServer.available ? 'running' : 'stopped', cwd });
+  return json(res, 200, {
+    ok: true,
+    transport: 'app-server',
+    cwd,
+    name: displayPathName(cwd),
+    git,
+    compare: gitEnvironment.compare,
+    processes,
+    browser: {
+      available: Boolean(cdp?.available),
+      port: Number(cdp?.port) || 9222,
+      message: cdp?.available ? 'CDP 浏览器已连接' : '当前没有连接桌面浏览器',
+      tabs: [],
+    },
+    sources: [
+      { name: '当前项目', path: cwd, kind: 'workspace' },
+      { name: '手机远程页面', path: '/public/index.html', kind: 'web' },
+      { name: '本机服务', path: '/server.js', kind: 'server' },
+    ],
+    capabilities: {
+      canCompare: Boolean(git.available),
+      canCommit: Boolean(git.available && git.branch),
+      canPush: Boolean(git.available && git.branch && git.remote),
+      canCheckout: Boolean(git.available && (git.localBranches || git.branches).length),
+    },
+    limitation: '提交、推送和切换分支都会在这台电脑上执行，并要求手机端再次确认。',
+    updatedAt: new Date().toISOString(),
+  });
+}
+
+async function resolveGitActionTarget(cwdValue = '') {
+  let workspace = { threads: [] };
+  try { workspace = await listWorkspaceThreads(160); } catch {}
+  const projects = existingProjectCwds(workspace.threads);
+  const requested = validLocalDirectory(String(cwdValue || '').trim());
+  const cwd = requested && projects.includes(requested) ? requested : (projects[0] || __dirname);
+  const environment = await readGitEnvironment(cwd);
+  if (!environment.git?.available || !environment.git.root) {
+    const error = new Error('当前项目不是可操作的 Git 仓库。');
+    error.status = 409;
+    error.code = 'GIT_REPOSITORY_REQUIRED';
+    throw error;
+  }
+  return { cwd, root: environment.git.root, environment, projects };
+}
+
+function gitActionError(message, code = 'GIT_ACTION_FAILED', status = 400) {
+  const error = new Error(message);
+  error.status = status;
+  error.code = code;
+  return error;
+}
+
+async function handleGitAction(req, res) {
+  if (!isAuthorized(req)) return json(res, 401, { ok: false, code: 'UNAUTHORIZED', message: '访问令牌不正确。' });
+  let payload = {};
+  try {
+    payload = JSON.parse(await readBody(req) || '{}');
+  } catch (error) {
+    return json(res, 400, { ok: false, code: 'BAD_REQUEST', message: error.message || '请求格式不正确。' });
+  }
+
+  const action = String(payload.action || '').trim().toLowerCase();
+  if (!['commit', 'push', 'checkout'].includes(action)) {
+    return json(res, 400, { ok: false, code: 'BAD_GIT_ACTION', message: '不支持的 Git 操作。' });
+  }
+
+  try {
+    const target = await resolveGitActionTarget(payload.cwd);
+    const root = target.root;
+    const currentBranch = target.environment.git.branch;
+    if (!currentBranch && action !== 'checkout') {
+      throw gitActionError('当前处于 detached HEAD，不能直接提交或推送。', 'GIT_DETACHED_HEAD', 409);
+    }
+
+    if (action === 'checkout') {
+      const branch = normalizeGitBranch(payload.branch);
+      const localBranches = new Set(target.environment.git.localBranches || target.environment.git.branches);
+      if (!branch || !localBranches.has(branch)) {
+        throw gitActionError('只能切换到已存在的本地分支。', 'GIT_BRANCH_NOT_FOUND', 400);
+      }
+      if (branch === currentBranch) {
+        return json(res, 200, { ok: true, action, branch, environment: target.environment, message: '当前已经在这个分支上。' });
+      }
+      const status = await runLocalCommand('git', ['-C', root, 'status', '--porcelain'], { timeoutMs: 8000 });
+      if (String(status.stdout || '').trim()) {
+        throw gitActionError('工作区有未提交改动，请先提交或暂存后再切换分支。', 'GIT_WORKTREE_DIRTY', 409);
+      }
+      await runLocalCommand('git', ['-C', root, 'switch', '--quiet', '--', branch], { timeoutMs: 15000 });
+      const environment = await readGitEnvironment(target.cwd);
+      return json(res, 200, { ok: true, action, branch, environment, message: `已切换到 ${branch}。` });
+    }
+
+    if (action === 'commit') {
+      const message = String(payload.message || '').replace(/\s+/g, ' ').trim();
+      if (!message) throw gitActionError('提交说明不能为空。', 'EMPTY_COMMIT_MESSAGE', 400);
+      if (message.length > 180) throw gitActionError('提交说明不能超过 180 个字符。', 'COMMIT_MESSAGE_TOO_LONG', 400);
+      const status = await runLocalCommand('git', ['-C', root, 'status', '--porcelain'], { timeoutMs: 8000 });
+      if (!String(status.stdout || '').trim()) throw gitActionError('工作区没有可提交的改动。', 'GIT_WORKTREE_CLEAN', 409);
+      await runLocalCommand('git', ['-C', root, 'add', '--all'], { timeoutMs: 20000 });
+      const commit = await runLocalCommand('git', ['-C', root, 'commit', '-m', message], { timeoutMs: 30000 });
+      const environment = await readGitEnvironment(target.cwd);
+      return json(res, 200, {
+        ok: true,
+        action,
+        environment,
+        output: String(commit.stdout || '').trim(),
+        message: '已提交当前改动。',
+      });
+    }
+
+    if (!target.environment.git.remote) {
+      throw gitActionError('当前仓库没有 origin 远程地址，无法推送。', 'GIT_REMOTE_REQUIRED', 409);
+    }
+    try {
+      await runLocalCommand('git', ['-C', root, 'rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}'], { timeoutMs: 8000 });
+    } catch {
+      throw gitActionError('当前分支还没有设置上游分支，暂时不能自动推送。', 'GIT_UPSTREAM_REQUIRED', 409);
+    }
+    const push = await runLocalCommand('git', ['-C', root, 'push'], { timeoutMs: 60000 });
+    const environment = await readGitEnvironment(target.cwd);
+    return json(res, 200, {
+      ok: true,
+      action,
+      environment,
+      output: String(push.stdout || push.stderr || '').trim(),
+      message: '已推送当前分支。',
+    });
+  } catch (error) {
+    return json(res, error?.status || 500, {
+      ok: false,
+      code: error?.code || 'GIT_ACTION_FAILED',
+      message: error?.message || 'Git 操作失败。',
+      detail: error?.stderr || '',
+    });
+  }
+}
+
+function githubRepositoryFromRemote(value) {
+  const remote = String(value || '').trim();
+  const match = remote.match(/^(?:https?:\/\/|ssh:\/\/git@|git@)github\.com(?::|\/)([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+?)(?:\.git)?\/?$/i);
+  if (!match) return null;
+  const owner = match[1];
+  const repo = match[2];
+  if (!owner || !repo) return null;
+  return { owner, repo, fullName: `${owner}/${repo}` };
+}
+
+function fetchGitHubJson(pathname) {
+  return new Promise((resolve, reject) => {
+    const request = https.request({
+      protocol: 'https:',
+      hostname: 'api.github.com',
+      method: 'GET',
+      path: pathname,
+      headers: {
+        accept: 'application/vnd.github+json',
+        'user-agent': `${APP_NAME.replace(/[^a-z0-9._-]/gi, '-')}/1.0`,
+      },
+    }, response => {
+      let body = '';
+      response.setEncoding('utf8');
+      response.on('data', chunk => {
+        body += chunk;
+        if (Buffer.byteLength(body) > GITHUB_RESPONSE_MAX_BYTES) {
+          response.destroy(new Error('GitHub 响应过大。'));
+        }
+      });
+      response.on('error', reject);
+      response.on('end', () => {
+        const status = Number(response.statusCode) || 0;
+        let data;
+        try { data = body ? JSON.parse(body) : null; } catch {
+          return reject(new Error('GitHub 返回了无法识别的数据。'));
+        }
+        if (status < 200 || status >= 300) {
+          const message = String(data?.message || `GitHub 请求失败（${status}）。`);
+          const error = new Error(message);
+          error.status = status;
+          return reject(error);
+        }
+        resolve(data);
+      });
+    });
+    request.setTimeout(GITHUB_REQUEST_TIMEOUT_MS, () => request.destroy(new Error('GitHub 请求超时。')));
+    request.on('error', reject);
+    request.end();
+  });
+}
+
+async function listGitHubPullRequests(repository) {
+  const cached = pullRequestCache.get(repository.fullName);
+  if (cached && Date.now() - cached.at < 60000) return cached.rows;
+  const pathname = `/repos/${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.repo)}/pulls?state=open&per_page=50`;
+  const payload = await fetchGitHubJson(pathname);
+  const rows = Array.isArray(payload) ? payload.map(row => ({
+    number: Number(row.number) || 0,
+    title: truncateText(row.title || '未命名拉取请求', 240),
+    url: String(row.html_url || ''),
+    author: String(row.user?.login || ''),
+    draft: row.draft === true,
+    updatedAt: normalizeIsoTimestamp(row.updated_at),
+    head: String(row.head?.ref || ''),
+    base: String(row.base?.ref || ''),
+  })).filter(row => row.number && /^https:\/\/github\.com\//i.test(row.url)) : [];
+  boundedSet(pullRequestCache, repository.fullName, { at: Date.now(), rows }, 30);
+  return rows;
+}
+
+async function readGitHubProject(cwd) {
+  let origin;
+  try {
+    const result = await runLocalCommand('git', ['-C', cwd, 'remote', 'get-url', 'origin'], { timeoutMs: 8000 });
+    origin = String(result.stdout || '').trim();
+  } catch {
+    return null;
+  }
+  const repository = githubRepositoryFromRemote(origin);
+  if (!repository) return null;
+  const pullRequests = await listGitHubPullRequests(repository);
+  return {
+    cwd,
+    name: displayPathName(cwd),
+    repository: repository.fullName,
+    url: `https://github.com/${repository.fullName}`,
+    pullRequests,
+  };
+}
+
+async function handlePullRequests(req, res) {
+  if (!isAuthorized(req)) return json(res, 401, { ok: false, code: 'UNAUTHORIZED', message: '访问令牌不正确。' });
+  const workspace = await listWorkspaceThreads(160);
+  const cwds = existingProjectCwds(workspace.threads).slice(0, 12);
+  const results = await Promise.allSettled(cwds.map(readGitHubProject));
+  const projects = results
+    .filter(result => result.status === 'fulfilled' && result.value)
+    .map(result => result.value)
+    .sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'));
+  const errors = results
+    .filter(result => result.status === 'rejected')
+    .map(result => result.reason?.message || String(result.reason || 'GitHub 读取失败'));
+  return json(res, 200, {
+    ok: true,
+    projects,
+    errors,
+    updatedAt: new Date().toISOString(),
+  });
 }
 
 function readTailLines(file) {
@@ -1193,6 +2041,25 @@ function extractUserAttachments(payload) {
   return paths;
 }
 
+function historyAttachmentDescriptor(filePath) {
+  const absolutePath = path.resolve(String(filePath || ''));
+  const mime = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp' }[path.extname(absolutePath).toLowerCase()];
+  if (!mime) return null;
+  try {
+    const stat = fs.lstatSync(absolutePath);
+    if (!stat.isFile() || stat.isSymbolicLink() || stat.size <= 0 || stat.size > MAX_ATTACHMENT_BYTES) return null;
+  } catch { return null; }
+  const now = Date.now();
+  for (const [id, item] of historyAttachmentCache) {
+    if (item.expiresAt <= now) historyAttachmentCache.delete(id);
+    else if (item.filePath === absolutePath) return { name: path.basename(absolutePath), url: `/codex/attachment?id=${encodeURIComponent(id)}` };
+  }
+  while (historyAttachmentCache.size >= HISTORY_ATTACHMENT_LIMIT) historyAttachmentCache.delete(historyAttachmentCache.keys().next().value);
+  const id = crypto.randomBytes(18).toString('base64url');
+  historyAttachmentCache.set(id, { filePath: absolutePath, mime, expiresAt: now + HISTORY_ATTACHMENT_TTL_MS });
+  return { name: path.basename(absolutePath), url: `/codex/attachment?id=${encodeURIComponent(id)}` };
+}
+
 function parseCodexThreadHistory(threadId, limit = MAX_HISTORY_MESSAGES) {
   const file = findCodexSessionFileByThreadId(threadId);
   if (!file) {
@@ -1202,7 +2069,7 @@ function parseCodexThreadHistory(threadId, limit = MAX_HISTORY_MESSAGES) {
       threadId,
       sessionFile: '',
       messages: [],
-      message: '没有找到所选线程的 Codex 会话文件。',
+      message: '没有找到所选任务的 Codex 会话文件。',
     };
   }
 
@@ -1252,7 +2119,7 @@ function parseCodexThreadHistory(threadId, limit = MAX_HISTORY_MESSAGES) {
           role: 'user',
           label: attachments.length ? `你 · ${attachments.length} 张图片` : '你',
           text: text || (attachments.length ? ' ' : ''),
-          attachments: attachments.map(filePath => ({ filePath, name: path.basename(filePath) })),
+          attachments: attachments.map(historyAttachmentDescriptor).filter(Boolean),
           timestamp: item.timestamp || '',
         });
       }
@@ -1327,7 +2194,154 @@ function parseCodexThreadHistory(threadId, limit = MAX_HISTORY_MESSAGES) {
   };
 }
 
-function handleThreadHistory(req, res) {
+function appServerTurnLabel(turn = {}, failed = false) {
+  const durationMs = Number(turn.durationMs || 0);
+  const seconds = durationMs > 0 ? Math.max(0, Math.floor(durationMs / 1000)) : 0;
+  const duration = seconds >= 60 ? `${Math.floor(seconds / 60)}m ${seconds % 60}s` : seconds ? `${seconds}s` : '';
+  if (failed) return duration ? `Codex · 失败 ${duration}` : 'Codex · 失败';
+  return duration ? `Codex · 已处理 ${duration}` : 'Codex';
+}
+
+function appServerUserMessage(item = {}, timestamp = '') {
+  const textParts = [];
+  const attachments = [];
+  for (const content of item.content || []) {
+    if (content?.type === 'text' && content.text) textParts.push(content.text);
+    if (content?.type === 'localImage' && content.path) {
+      const attachment = historyAttachmentDescriptor(content.path);
+      if (attachment) attachments.push(attachment);
+    } else if (content?.type === 'image' && content.url) {
+      attachments.push({ filePath: content.url, name: 'image' });
+    }
+  }
+  const text = cleanUserHistoryText(textParts.join('\n'));
+  if (!text && !attachments.length) return null;
+  return {
+    role: 'user',
+    label: attachments.length ? `你 · ${attachments.length} 张图片` : '你',
+    text: text || ' ',
+    attachments,
+    timestamp,
+  };
+}
+
+function appServerActivityText(item = {}) {
+  const type = String(item.type || '').trim();
+  const activityTypes = new Set(['mcpToolCall', 'fileChange', 'contextCompaction', 'compacted', 'commandExecution', 'shellCommand', 'webSearch', 'imageGeneration', 'imageView', 'browserAction']);
+  if (!activityTypes.has(type)) return null;
+  const rawTool = String(item.tool || item.name || item.command || '').trim();
+  const tool = rawTool.split('.').pop().toLowerCase();
+  const args = item.arguments && typeof item.arguments === 'object' ? item.arguments : {};
+  const title = String(args.title || item.title || '').replace(/\s+/g, ' ').trim();
+  const code = String(args.code || '').trim();
+
+  if (type === 'fileChange') {
+    const changes = Array.isArray(item.changes) ? item.changes : [];
+    const paths = changes.map(change => change?.path).filter(Boolean).map(shortPath);
+    return {
+      kind: 'tool',
+      category: 'file',
+      label: '文件',
+      text: paths.length ? `编辑 ${uniqueList(paths, 3).join('、')}` : '编辑文件',
+    };
+  }
+  if (type === 'contextCompaction' || type === 'compacted') {
+    return { kind: 'tool', category: 'context', label: '上下文', text: '压缩上下文' };
+  }
+
+  const looksLikeImage = tool === 'view_image' || /(?:view_image|查看图片|已查看\s*\d*\s*张?(?:图片|图像)|\bimage(?:s)?\b)/i.test(`${rawTool} ${title}`) || /\bview_image\b/i.test(code);
+  if (looksLikeImage) return { kind: 'tool', category: 'image', label: '图片', text: title || '查看图片' };
+
+  const looksLikeBrowser = /(?:browser|chrome|网页|页面|tab|domsnapshot|screenshot|playwright|goto\s*\()/i.test(`${rawTool} ${title} ${code}`);
+  const looksLikeCommand = /(?:exec_command|shell_command|powershell|命令|npm\s|node\s|git\s|Get-[A-Za-z]|rg\s|sed\s|\bcat\s)/i.test(`${rawTool} ${title} ${code}`);
+  if (looksLikeBrowser) return { kind: 'tool', category: 'browser', label: '浏览器', text: title || '检查网页' };
+  if (looksLikeCommand) return { kind: 'tool', category: 'command', label: '命令', text: title || '运行命令' };
+
+  if (type === 'commandExecution' || type === 'shellCommand') {
+    return { kind: 'tool', category: 'command', label: '命令', text: title || item.command || '运行命令' };
+  }
+  if (type === 'webSearch' || /search/i.test(tool)) return { kind: 'tool', category: 'search', label: '搜索', text: title || '搜索资料' };
+  return { kind: 'tool', category: 'tool', label: '工具', text: title || rawTool || '使用工具' };
+}
+
+function appServerTurnActivities(turn = {}) {
+  const activities = [];
+  for (const item of turn.items || []) {
+    if (!item || !item.type) continue;
+    const activity = appServerActivityText(item);
+    if (activity) activities.push({ ...activity, id: item.id || '', status: item.status || '' });
+  }
+  return activities.slice(-500);
+}
+
+function historyFromAppServerThread(thread, limit = MAX_HISTORY_MESSAGES) {
+  const messages = [];
+  // The app server can return turns in cache or newest-first order. The phone
+  // must always mirror the desktop conversation from oldest to newest.
+  const turns = [...(thread?.turns || [])]
+    .map((turn, index) => ({ turn, index }))
+    .sort((left, right) => {
+      const leftTime = Number(left.turn?.startedAt || left.turn?.createdAt || 0);
+      const rightTime = Number(right.turn?.startedAt || right.turn?.createdAt || 0);
+      return leftTime - rightTime || left.index - right.index;
+    });
+  for (const { turn } of turns) {
+    const startedAt = Number(turn.startedAt || 0) ? new Date(Number(turn.startedAt) * 1000).toISOString() : '';
+    const completedAt = Number(turn.completedAt || 0) ? new Date(Number(turn.completedAt) * 1000).toISOString() : '';
+    const agentItems = [];
+    const activities = appServerTurnActivities(turn);
+    let hasExplicitFinal = false;
+    for (const item of turn.items || []) {
+      if (item?.type === 'userMessage') {
+        const message = appServerUserMessage(item, startedAt);
+        if (message) messages.push(message);
+      }
+      if (item?.type === 'agentMessage' && item.text) {
+        agentItems.push(item);
+        if (item.phase === 'final_answer') hasExplicitFinal = true;
+      }
+    }
+
+    const visibleAgents = hasExplicitFinal
+      ? agentItems.filter(item => item.phase === 'final_answer')
+      : (turn.status === 'completed' ? agentItems.slice(-1) : []);
+    for (const item of visibleAgents) {
+      const text = normalizeHistoryText(item.text || '');
+      if (!text) continue;
+      messages.push({
+        role: 'assistant',
+        label: appServerTurnLabel(turn, false),
+        text,
+        steps: activities,
+        timestamp: completedAt || startedAt,
+      });
+    }
+
+    if (turn.status === 'failed' && !visibleAgents.length) {
+      const failure = normalizeHistoryText(turn.error?.message || turn.error?.additionalDetails || '') || emptyCodexFailureText();
+      messages.push({
+        role: 'assistant',
+        label: appServerTurnLabel(turn, true),
+        text: failure,
+        steps: activities,
+        timestamp: completedAt || startedAt,
+      });
+    }
+  }
+
+  const normalizedLimit = Math.max(1, Math.min(Number(limit) || MAX_HISTORY_MESSAGES, MAX_HISTORY_MESSAGES));
+  return {
+    ok: true,
+    available: Boolean(thread),
+    transport: 'app-server',
+    threadId: thread?.id || '',
+    sessionFile: thread?.path ? path.basename(thread.path) : '',
+    truncated: messages.length > normalizedLimit,
+    messages: messages.slice(-normalizedLimit),
+  };
+}
+
+async function handleThreadHistory(req, res) {
   if (!isAuthorized(req)) {
     return json(res, 401, { ok: false, code: 'UNAUTHORIZED', message: '访问令牌不正确。' });
   }
@@ -1335,9 +2349,19 @@ function handleThreadHistory(req, res) {
     const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
     const threadId = url.searchParams.get('thread') || '';
     if (!isCodexThreadId(threadId)) {
-      return json(res, 400, { ok: false, code: 'BAD_THREAD_ID', message: '线程 ID 不正确。' });
+      return json(res, 400, { ok: false, code: 'BAD_THREAD_ID', message: '任务 ID 不正确。' });
     }
-    return json(res, 200, parseCodexThreadHistory(threadId, url.searchParams.get('limit') || MAX_HISTORY_MESSAGES));
+    const limit = url.searchParams.get('limit') || MAX_HISTORY_MESSAGES;
+    try {
+      const thread = await codexAppServer.readThread(threadId, true);
+      return json(res, 200, historyFromAppServerThread(thread, limit));
+    } catch (appServerError) {
+      return json(res, 200, {
+        ...parseCodexThreadHistory(threadId, limit),
+        transport: 'session-files',
+        appServerError: appServerError.message || String(appServerError),
+      });
+    }
   } catch (error) {
     return json(res, 500, { ok: false, code: 'CODEX_HISTORY_FAILED', message: '读取 Codex 聊天记录失败。', detail: String(error && error.message || error) });
   }
@@ -1466,8 +2490,8 @@ function formatToolCall(payload, options = {}) {
   const name = rawName.split('.').pop();
   const args = parseToolArguments(payload);
 
-  if (name === 'exec_command') {
-    const cmd = String(args.cmd || args.raw || '').trim();
+  if (name === 'exec_command' || name === 'shell_command') {
+    const cmd = String(args.command || args.cmd || args.raw || '').trim();
     const files = extractCommandFiles(cmd);
     if (files.length) return `Read ${files.join(', ')}`;
 
@@ -1497,11 +2521,29 @@ function formatToolCall(payload, options = {}) {
     return `${options.complete ? '已编辑' : '正在编辑'} ${target}${delta}`;
   }
 
-  if (name === 'write_stdin') return 'Read command output';
-  if (name === 'view_image') return `View image${args.path ? ` ${shortPath(args.path)}` : ''}`;
-  if (name === 'read_mcp_resource') return `Read resource${args.uri ? ` ${shortPath(args.uri)}` : ''}`;
-  if (name.includes('browser') || name.includes('chrome')) return 'Check browser page';
-  return `${rawName}${Object.keys(args).length ? ` ${truncateText(JSON.stringify(args), 120)}` : ''}`;
+  if (name === 'wait' || name === 'wait_agent' || name === 'wait_threads') return '';
+  if (name === 'exec') return '运行命令或工具';
+  if (name === 'write_stdin') return '读取命令输出';
+  if (name === 'view_image') return `查看图片${args.path ? ` ${shortPath(args.path)}` : ''}`;
+  if (name === 'read_mcp_resource') return '读取资源';
+  if (name.includes('browser') || name.includes('chrome')) return '检查网页';
+  if (name.includes('search')) return '搜索资料';
+  if (name.includes('read')) return '读取信息';
+  return '使用工具';
+}
+
+function cleanVisibleProgress(value) {
+  let text = normalizeHistoryText(value || '')
+    .replace(/^\*{1,2}|\*{1,2}$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!text) return '';
+  if (/^(?:wait|exec|apply_patch|shell_command)\s*\{/i.test(text)) return '';
+  if (/^\{[\s\S]*\}$/.test(text)) return '';
+  const hanCount = (text.match(/[\u3400-\u9fff]/g) || []).length;
+  const letterCount = (text.match(/[A-Za-z]/g) || []).length;
+  if (!hanCount && letterCount > 24) return '';
+  return truncateText(text, 220);
 }
 
 
@@ -1574,7 +2616,7 @@ function modelInfoFromId(modelId = '', updatedAt = '') {
     id,
     version: '',
     source: id.startsWith('gpt-') ? 'official' : id ? 'unknown' : '',
-    label: '',
+    label: labelFromModelName(id),
     displayName: id,
     updatedAt,
   };
@@ -1612,9 +2654,13 @@ function reasoningModeFromValue(value = '', updatedAt = '') {
     'x-high': 'xhigh',
     'extra-high': 'xhigh',
     extreme: 'xhigh',
-    max: 'xhigh',
+    max: 'max',
+    maximum: 'max',
+    ultra: 'ultra',
     '超高': 'xhigh',
-    '极高': 'xhigh',
+    '最高': 'max',
+    '极高': 'max',
+    '极致': 'ultra',
   };
   const key = aliases[raw] || '';
   const target = key ? REASONING_MODE_TARGETS[key] : null;
@@ -1653,24 +2699,24 @@ function stepFromEvent(item) {
     if (failureText) return { kind: 'error', label: '失败', text: failureText, time: item.timestamp };
     if (payload.type === 'task_started') return { kind: 'start', label: '开始', text: '开始处理这条消息', time: item.timestamp };
     if (payload.type === 'task_complete') return { kind: 'complete', label: '完成', text: '回复完成', time: item.timestamp };
-    if (payload.type === 'agent_message' && payload.message) {
-      return { kind: 'thinking', label: '思考', text: String(payload.message).trim(), time: item.timestamp };
-    }
+    if (payload.type === 'agent_message') return null;
     return null;
   }
 
   if (item.type === 'response_item') {
     if (payload.type === 'reasoning') {
-      const text = extractReasoningText(payload);
-      return text ? { kind: 'thinking', label: '思考', text, time: item.timestamp } : null;
+      return null;
     }
     if (payload.type === 'function_call') {
-      const toolName = payload.name || 'tool';
-      return { kind: 'tool', label: '工具', text: formatToolCall(payload), callId: payload.call_id || '', time: item.timestamp };
+      const text = formatToolCall(payload);
+      return text ? { kind: 'tool', label: '工具', text, callId: payload.call_id || '', time: item.timestamp } : null;
     }
     if (payload.type === 'message') {
       const text = extractMessageText(payload.content);
-      if (text && payload.role === 'assistant' && payload.phase === 'commentary') return { kind: 'thinking', label: '思考', text: truncateText(text, 1200), time: item.timestamp };
+      if (text && payload.role === 'assistant' && payload.phase === 'commentary') {
+        const progress = cleanVisibleProgress(text);
+        return progress ? { kind: 'thinking', label: '进度', text: progress, time: item.timestamp } : null;
+      }
       if (text && payload.role === 'assistant') return { kind: payload.phase === 'final_answer' ? 'final' : 'assistant', label: '回复', text: truncateText(text, 1200), time: item.timestamp };
     }
   }
@@ -1694,9 +2740,9 @@ function parseCodexStatus(options = {}) {
       status: wantsExactSession ? 'missing' : options.expectNewThread && sinceMs ? 'waiting' : 'idle',
       threadId: options.threadId || '',
       sessionFile: options.sessionFile || '',
-      message: wantsExactSession ? '没有找到所选线程的 Codex 会话文件。' : '还没有找到 Codex 会话文件。',
+      message: wantsExactSession ? '没有找到所选任务的 Codex 会话文件。' : '还没有找到 Codex 会话文件。',
       steps: [],
-      preview: options.expectNewThread && sinceMs ? '已发送，等待 Codex 创建新线程记录…' : '还没有找到这个线程的回复记录。',
+      preview: options.expectNewThread && sinceMs ? '已发送，等待 Codex 创建新任务记录…' : '还没有找到这个任务的回复记录。',
       final: '',
       durationMs: 0,
     };
@@ -1830,6 +2876,8 @@ function parseCodexStatus(options = {}) {
   const startMs = Date.parse(startedAt || '') || sinceMs || 0;
   const endMs = completedAt ? Date.parse(completedAt) : Date.now();
   const durationMs = startMs ? Math.max(0, endMs - startMs) : 0;
+  const toolCount = statusSteps.filter(step => step.kind === 'tool').length;
+  const latestProgress = [...statusSteps].reverse().find(step => step.kind === 'thinking')?.text || '';
   return {
     ok: true,
     available: true,
@@ -1845,6 +2893,9 @@ function parseCodexStatus(options = {}) {
     context,
     model,
     reasoningMode,
+    toolCount,
+    latestProgress,
+    processSummary: latestProgress || (toolCount ? `正在运行 ${toolCount} 个操作` : active ? '正在处理请求' : ''),
     processText: statusSteps.map(step => `${step.label || '事件'}：${step.text || ''}`).join('\\n'),
     preview: final || preview || finalFailureText || (waiting ? '已发送，等待 Codex 开始回复…' : active ? 'Codex 正在回复…' : '暂无可显示回复。'),
     final: final || '',
@@ -1872,6 +2923,55 @@ function handleCodexStatus(req, res) {
   }
 }
 
+function handleCodexApprovals(req, res) {
+  if (!isAuthorized(req)) {
+    return json(res, 401, { ok: false, code: 'UNAUTHORIZED', message: '访问令牌不正确。' });
+  }
+
+  const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+  const threadId = String(url.searchParams.get('thread') || '').trim();
+  if (threadId && !isCodexThreadId(threadId)) {
+    return json(res, 400, { ok: false, code: 'BAD_THREAD_ID', message: '任务 ID 不正确。' });
+  }
+
+  return json(res, 200, {
+    ok: true,
+    available: codexAppServer.isAvailable(),
+    approvals: codexAppServer.listPendingApprovals({ threadId }),
+  });
+}
+
+async function handleCodexApproval(req, res) {
+  if (!isAuthorized(req)) {
+    return json(res, 401, { ok: false, code: 'UNAUTHORIZED', message: '访问令牌不正确。' });
+  }
+
+  let payload = {};
+  try {
+    payload = JSON.parse(await readBody(req) || '{}');
+  } catch (error) {
+    return json(res, 400, { ok: false, code: 'BAD_REQUEST', message: error.message || '请求格式不正确。' });
+  }
+
+  const requestId = String(payload.requestId || '').trim();
+  const decision = String(payload.decision || '').trim();
+  if (!requestId || requestId.length > 200 || !decision) {
+    return json(res, 400, { ok: false, code: 'BAD_APPROVAL_REQUEST', message: '授权请求或操作不正确。' });
+  }
+
+  try {
+    const result = codexAppServer.resolvePendingApproval(requestId, decision);
+    return json(res, 200, { ok: true, ...result, message: '已将授权决定发送给 Codex。' });
+  } catch (error) {
+    const status = Number(error?.status) || 500;
+    return json(res, status, {
+      ok: false,
+      code: error?.code || 'APPROVAL_FAILED',
+      message: error?.message || '处理 Codex 授权失败。',
+    });
+  }
+}
+
 async function handleSelectThread(req, res) {
   if (!isAuthorized(req)) {
     return json(res, 401, { ok: false, code: 'UNAUTHORIZED', message: '访问令牌不正确。' });
@@ -1886,12 +2986,12 @@ async function handleSelectThread(req, res) {
 
   const threadId = typeof payload.threadId === 'string' ? payload.threadId : '';
   if (!isCodexThreadId(threadId)) {
-    return json(res, 400, { ok: false, code: 'BAD_THREAD_ID', message: '线程 ID 不正确。' });
+    return json(res, 400, { ok: false, code: 'BAD_THREAD_ID', message: '任务 ID 不正确。' });
   }
 
   try {
     await activateCodexThread(threadId);
-    return json(res, 200, { ok: true, threadId, message: '已切换到所选 Codex 线程。' });
+    return json(res, 200, { ok: true, threadId, message: '已切换到所选 Codex 任务。' });
   } catch (error) {
     const explained = explainTargetError(error, 'codex');
     return json(res, 500, { ok: false, ...explained });
@@ -2150,7 +3250,7 @@ function resolveNewThreadTarget(payload = {}) {
   const threadId = typeof payload.threadId === 'string' ? payload.threadId : '';
 
   if (threadId && !isCodexThreadId(threadId)) {
-    const error = new Error('线程 ID 不正确。');
+    const error = new Error('任务 ID 不正确。');
     error.status = 400;
     error.code = 'BAD_THREAD_ID';
     throw error;
@@ -2193,29 +3293,266 @@ async function handleNewCodexThread(req, res) {
   try {
     const target = resolveNewThreadTarget(payload);
     const project = classifyThreadProject(target.cwd);
-    if (project.isProjectThread) {
-      await activateNewCodexThread(target.cwd);
-    } else {
-      await activateNewProjectlessCodexThread(target.anchorThreadId);
+    try {
+      const started = await codexAppServer.startThread({ cwd: project.isProjectThread ? target.cwd : '' });
+      const threadId = started.thread.id;
+      invalidateCodexThreadListCache();
+      return json(res, 200, {
+        ok: true,
+        pending: false,
+        transport: 'app-server',
+        threadId,
+        cwd: project.isProjectThread ? target.cwd : '',
+        projectName: project.projectName,
+        projectPath: project.projectPath,
+        projectKey: project.projectKey,
+        scope: project.isProjectThread ? 'project' : 'conversation',
+        message: project.isProjectThread
+          ? `已在“${project.projectName}”中新建任务。`
+          : '已新建一个对话任务。',
+      });
+    } catch (appServerError) {
+      if (project.isProjectThread) {
+        await activateNewCodexThread(target.cwd);
+      } else {
+        await activateNewProjectlessCodexThread(target.anchorThreadId);
+      }
+      return json(res, 200, {
+        ok: true,
+        pending: true,
+        transport: 'desktop-gui',
+        appServerError: appServerError.message || String(appServerError),
+        cwd: project.isProjectThread ? target.cwd : '',
+        projectName: project.projectName,
+        projectPath: project.projectPath,
+        projectKey: project.projectKey,
+        scope: project.isProjectThread ? 'project' : 'conversation',
+        message: project.isProjectThread
+          ? `已在 ChatGPT Desktop 打开“${project.projectName}”的新任务。`
+          : '已在 ChatGPT Desktop 打开一个新的对话任务。',
+      });
     }
-    return json(res, 200, {
-      ok: true,
-      pending: true,
-      cwd: project.isProjectThread ? target.cwd : '',
-      projectName: project.projectName,
-      projectPath: project.projectPath,
-      projectKey: project.projectKey,
-      scope: project.isProjectThread ? 'project' : 'conversation',
-      message: project.isProjectThread
-        ? `已在 Codex 打开“${project.projectName}”的新线程。`
-        : '已在 Codex 打开一个新的对话线程。',
-    });
   } catch (error) {
     if (error && error.status) {
-      return json(res, error.status, { ok: false, code: error.code || 'BAD_REQUEST', message: error.message || '新建线程失败。' });
+      return json(res, error.status, { ok: false, code: error.code || 'BAD_REQUEST', message: error.message || '新建任务失败。' });
     }
     const explained = explainTargetError(error, 'codex');
     return json(res, 500, { ok: false, ...explained });
+  }
+}
+
+function createScheduledTaskRecord(payload = {}, previous = null) {
+  const prompt = String(payload.prompt || previous?.prompt || '').trim();
+  if (!prompt) {
+    const error = new Error('计划内容不能为空。');
+    error.status = 400;
+    error.code = 'EMPTY_SCHEDULE_PROMPT';
+    throw error;
+  }
+  if (prompt.length > MAX_TEXT_LENGTH) {
+    const error = new Error(`计划内容不能超过 ${MAX_TEXT_LENGTH} 个字符。`);
+    error.status = 400;
+    error.code = 'SCHEDULE_PROMPT_TOO_LONG';
+    throw error;
+  }
+  const runMode = payload.runMode === 'thread' ? 'thread' : 'standalone';
+  const threadId = runMode === 'thread' ? String(payload.threadId || previous?.threadId || '').trim() : '';
+  if (runMode === 'thread' && !isCodexThreadId(threadId)) {
+    const error = new Error('要延续当前任务，请先选择一个有效的 Codex 任务。');
+    error.status = 400;
+    error.code = 'SCHEDULE_THREAD_REQUIRED';
+    throw error;
+  }
+  const requestedCwd = payload.cwd === undefined ? previous?.cwd || '' : payload.cwd;
+  const cwd = requestedCwd ? validLocalDirectory(String(requestedCwd)) : '';
+  if (requestedCwd && !cwd) {
+    const error = new Error('计划项目目录不存在或不可用。');
+    error.status = 400;
+    error.code = 'SCHEDULE_PROJECT_UNAVAILABLE';
+    throw error;
+  }
+  const intervalMinutes = normalizeScheduleInterval(payload.intervalMinutes === undefined ? previous?.intervalMinutes : payload.intervalMinutes);
+  const now = new Date().toISOString();
+  return normalizeScheduledTask({
+    id: previous?.id || crypto.randomUUID(),
+    prompt,
+    cwd,
+    threadId,
+    runMode,
+    intervalMinutes,
+    enabled: payload.enabled === undefined ? previous?.enabled !== false : payload.enabled === true,
+    createdAt: previous?.createdAt || now,
+    updatedAt: now,
+    nextRunAt: previous && payload.intervalMinutes === undefined ? previous.nextRunAt : new Date(Date.now() + intervalMinutes * 60000).toISOString(),
+    lastRunAt: previous?.lastRunAt || '',
+    lastStatus: previous?.lastStatus || 'idle',
+    lastMessage: previous?.lastMessage || '',
+    lastThreadId: previous?.lastThreadId || '',
+  });
+}
+
+function scheduledTaskSummary(state = readCodexMiniState()) {
+  return normalizeScheduledTasks(state.scheduledTasks);
+}
+
+function updateScheduledTaskState(taskId, updater) {
+  const state = readCodexMiniState();
+  const index = state.scheduledTasks.findIndex(task => task.id === taskId);
+  if (index === -1) return null;
+  const next = updater({ ...state.scheduledTasks[index] });
+  if (!next) return null;
+  state.scheduledTasks[index] = normalizeScheduledTask(next);
+  writeCodexMiniState(state);
+  return state.scheduledTasks[index];
+}
+
+async function runScheduledTask(taskId, options = {}) {
+  const id = String(taskId || '').trim();
+  if (!id || scheduledTaskRuns.has(id)) return null;
+  scheduledTaskRuns.add(id);
+  try {
+    const state = readCodexMiniState();
+    const task = state.scheduledTasks.find(item => item.id === id);
+    if (!task || !task.enabled) return null;
+    const now = Date.now();
+    if (!options.force && Date.parse(task.nextRunAt) > now) return null;
+
+    if (task.runMode === 'thread') {
+      const runtime = codexAppServer.runtimeForThread(task.threadId);
+      const loadedThread = runtime?.status === 'running' ? null : await codexAppServer.readThread(task.threadId, false);
+      if (runtime?.status === 'running' || loadedThread?.status?.type === 'active') {
+        return updateScheduledTaskState(id, current => ({
+          ...current,
+          updatedAt: new Date().toISOString(),
+          nextRunAt: nextScheduledRunAt(current),
+          lastStatus: 'skipped',
+          lastMessage: '当前任务仍在运行，已跳过本次计划。',
+        }));
+      }
+    }
+
+    updateScheduledTaskState(id, current => ({
+      ...current,
+      updatedAt: new Date().toISOString(),
+      lastStatus: 'running',
+      lastMessage: '',
+    }));
+
+    const result = await codexAppServer.sendTurn({
+      threadId: task.runMode === 'thread' ? task.threadId : '',
+      cwd: task.cwd,
+      text: task.prompt,
+      clientUserMessageId: `schedule-${task.id}-${Date.now()}`,
+    });
+    return updateScheduledTaskState(id, current => ({
+      ...current,
+      updatedAt: new Date().toISOString(),
+      nextRunAt: nextScheduledRunAt(current),
+      lastRunAt: new Date().toISOString(),
+      lastStatus: 'started',
+      lastMessage: '已提交给本机 Codex。',
+      lastThreadId: result.threadId || current.lastThreadId || '',
+    }));
+  } catch (error) {
+    return updateScheduledTaskState(id, current => ({
+      ...current,
+      updatedAt: new Date().toISOString(),
+      nextRunAt: nextScheduledRunAt(current),
+      lastRunAt: new Date().toISOString(),
+      lastStatus: 'error',
+      lastMessage: truncateText(error?.message || String(error), 500),
+    }));
+  } finally {
+    scheduledTaskRuns.delete(id);
+  }
+}
+
+async function runDueScheduledTasks() {
+  const now = Date.now();
+  const due = scheduledTaskSummary().filter(task => task.enabled && Date.parse(task.nextRunAt) <= now);
+  for (const task of due) await runScheduledTask(task.id);
+}
+
+function startScheduledTaskRunner() {
+  if (scheduledTaskTimer) return;
+  scheduledTaskTimer = setInterval(() => {
+    runDueScheduledTasks().catch(error => console.warn('Scheduled task runner failed:', error.message || error));
+  }, SCHEDULED_TASK_POLL_MS);
+  scheduledTaskTimer.unref?.();
+  runDueScheduledTasks().catch(error => console.warn('Scheduled task runner failed:', error.message || error));
+}
+
+function stopScheduledTaskRunner() {
+  if (!scheduledTaskTimer) return;
+  clearInterval(scheduledTaskTimer);
+  scheduledTaskTimer = null;
+}
+
+async function handleSchedules(req, res) {
+  if (!isAuthorized(req)) return json(res, 401, { ok: false, code: 'UNAUTHORIZED', message: '访问令牌不正确。' });
+  const workspace = await listWorkspaceThreads(160);
+  const projects = existingProjectCwds(workspace.threads).map(cwd => ({ cwd, name: displayPathName(cwd) }));
+  if (req.method === 'GET') {
+    return json(res, 200, { ok: true, schedules: scheduledTaskSummary(), projects });
+  }
+
+  let payload = {};
+  try {
+    payload = JSON.parse(await readBody(req) || '{}');
+  } catch (error) {
+    return json(res, 400, { ok: false, code: 'BAD_REQUEST', message: error.message || '请求格式不正确。' });
+  }
+
+  const action = String(payload.action || '').trim();
+  const id = String(payload.id || '').trim();
+  try {
+    const state = readCodexMiniState();
+    if (action === 'create') {
+      const task = createScheduledTaskRecord(payload);
+      state.scheduledTasks = [...state.scheduledTasks, task];
+      if (state.scheduledTasks.length > SCHEDULED_TASK_LIMIT) {
+        return json(res, 400, { ok: false, code: 'SCHEDULE_LIMIT_REACHED', message: `最多可保留 ${SCHEDULED_TASK_LIMIT} 个计划。` });
+      }
+      writeCodexMiniState(state);
+      return json(res, 200, { ok: true, schedule: task, schedules: scheduledTaskSummary(), projects, message: '已创建计划。' });
+    }
+    const index = state.scheduledTasks.findIndex(task => task.id === id);
+    if (index === -1) {
+      return json(res, 404, { ok: false, code: 'SCHEDULE_NOT_FOUND', message: '这个计划不存在或已被删除。' });
+    }
+    if (action === 'update') {
+      const task = createScheduledTaskRecord(payload, state.scheduledTasks[index]);
+      state.scheduledTasks[index] = task;
+      writeCodexMiniState(state);
+      return json(res, 200, { ok: true, schedule: task, schedules: scheduledTaskSummary(), projects, message: '已更新计划。' });
+    }
+    if (action === 'toggle') {
+      const enabled = payload.enabled === true;
+      state.scheduledTasks[index] = normalizeScheduledTask({
+        ...state.scheduledTasks[index],
+        enabled,
+        updatedAt: new Date().toISOString(),
+        nextRunAt: enabled ? new Date(Date.now() + state.scheduledTasks[index].intervalMinutes * 60000).toISOString() : state.scheduledTasks[index].nextRunAt,
+      });
+      writeCodexMiniState(state);
+      return json(res, 200, { ok: true, schedule: state.scheduledTasks[index], schedules: scheduledTaskSummary(), projects, message: enabled ? '已启用计划。' : '已暂停计划。' });
+    }
+    if (action === 'delete') {
+      state.scheduledTasks.splice(index, 1);
+      writeCodexMiniState(state);
+      return json(res, 200, { ok: true, schedules: scheduledTaskSummary(), projects, message: '已删除计划。' });
+    }
+    if (action === 'run') {
+      await runScheduledTask(id, { force: true });
+      return json(res, 200, { ok: true, schedules: scheduledTaskSummary(), projects, message: '已提交本次计划。' });
+    }
+    return json(res, 400, { ok: false, code: 'BAD_SCHEDULE_ACTION', message: '不支持的计划操作。' });
+  } catch (error) {
+    return json(res, error?.status || 500, {
+      ok: false,
+      code: error?.code || 'SCHEDULE_FAILED',
+      message: error?.message || '计划操作失败。',
+    });
   }
 }
 
@@ -2398,7 +3735,7 @@ function modelSwitchTargetForCurrent(current = {}, requestedTarget = '') {
 
 async function switchCodexGuiModel(threadId = '', targetKey = '', options = {}) {
   if (threadId && !isCodexThreadId(threadId)) {
-    const error = new Error('线程 ID 不正确。');
+    const error = new Error('任务 ID 不正确。');
     error.status = 400;
     error.code = 'BAD_THREAD_ID';
     throw error;
@@ -2500,7 +3837,7 @@ async function verifyWindowsToolbarSwitch(kind, target) {
 
 async function switchCodexReasoningMode(threadId = '', targetKey = '', options = {}) {
   if (threadId && !isCodexThreadId(threadId)) {
-    const error = new Error('线程 ID 不正确。');
+    const error = new Error('任务 ID 不正确。');
     error.status = 400;
     error.code = 'BAD_THREAD_ID';
     throw error;
@@ -2589,7 +3926,7 @@ async function stopCodexResponse(threadId = '') {
 async function runCodexThreadCommand(threadId, command, options = {}) {
   return platform.withClipboardPreserved(async () => {
     if (threadId && !isCodexThreadId(threadId)) {
-      const error = new Error('线程 ID 不正确。');
+      const error = new Error('任务 ID 不正确。');
       error.status = 400;
       error.code = 'BAD_THREAD_ID';
       throw error;
@@ -2599,13 +3936,13 @@ async function runCodexThreadCommand(threadId, command, options = {}) {
     if (command === 'archive') {
       await pressCodexShortcut('a', ['command', 'shift']);
       await delay(CODEX_COMMAND_SETTLE_MS);
-      return { message: '已归档当前 Codex 线程。' };
+      return { message: '已归档当前 Codex 任务。' };
     }
 
     if (command === 'pin') {
       await pressCodexShortcut('p', ['command', 'option']);
       await delay(CODEX_COMMAND_SETTLE_MS);
-      return { message: options.pinned ? '已置顶当前 Codex 线程。' : '已取消置顶当前 Codex 线程。' };
+      return { message: options.pinned ? '已置顶当前 Codex 任务。' : '已取消置顶当前 Codex 任务。' };
     }
 
     if (command === 'rename') {
@@ -2629,10 +3966,10 @@ async function runCodexThreadCommand(threadId, command, options = {}) {
       await delay(120);
       await pressEnter();
       await delay(CODEX_COMMAND_SETTLE_MS);
-      return { message: '已重命名当前 Codex 线程。', name };
+      return { message: '已重命名当前 Codex 任务。', name };
     }
 
-    const error = new Error('不支持的线程操作。');
+    const error = new Error('不支持的任务操作。');
     error.status = 400;
     error.code = 'BAD_THREAD_ACTION';
     throw error;
@@ -2654,33 +3991,81 @@ async function handleThreadAction(req, res) {
   const threadId = typeof payload.threadId === 'string' ? payload.threadId : '';
   const action = String(payload.action || '').trim();
   if (!isCodexThreadId(threadId)) {
-    return json(res, 400, { ok: false, code: 'BAD_THREAD_ID', message: '线程 ID 不正确。' });
+    return json(res, 400, { ok: false, code: 'BAD_THREAD_ID', message: '任务 ID 不正确。' });
   }
 
   try {
     const state = readCodexMiniState();
     let result;
     if (action === 'archive') {
-      result = await runCodexThreadCommand(threadId, 'archive');
+      try {
+        await codexAppServer.archiveThread(threadId);
+        result = { message: '已归档当前任务。', transport: 'app-server' };
+      } catch (appServerError) {
+        result = await runCodexThreadCommand(threadId, 'archive');
+        result.transport = 'desktop-gui';
+        result.appServerError = appServerError.message || String(appServerError);
+      }
       state.archivedThreadIds = setThreadSetMembership(state.archivedThreadIds, threadId, true);
       state.pinnedThreadIds = setThreadSetMembership(state.pinnedThreadIds, threadId, false);
     } else if (action === 'pin' || action === 'unpin') {
       const pinned = action === 'pin';
-      result = await runCodexThreadCommand(threadId, 'pin', { pinned });
+      try {
+        await codexAppServer.setThreadPinned(threadId, pinned);
+        result = {
+          message: pinned ? '已置顶当前任务。' : '已取消置顶当前任务。',
+          transport: 'app-server',
+        };
+      } catch (appServerError) {
+        result = await runCodexThreadCommand(threadId, 'pin', { pinned });
+        result.transport = 'desktop-gui';
+        result.appServerError = appServerError.message || String(appServerError);
+      }
       state.pinnedThreadIds = setThreadSetMembership(state.pinnedThreadIds, threadId, pinned);
+    } else if (action === 'compact') {
+      await codexAppServer.compactThread(threadId);
+      result = {
+        message: '已开始压缩当前任务的上下文。',
+        transport: 'app-server',
+      };
+    } else if (action === 'review') {
+      const review = await codexAppServer.startReview(threadId, {
+        delivery: 'inline',
+        target: { type: 'uncommittedChanges' },
+      });
+      result = {
+        message: '已开始审查当前项目的未提交改动。',
+        transport: 'app-server',
+        turnId: review?.turn?.id || '',
+        reviewThreadId: review?.reviewThreadId || threadId,
+      };
     } else if (action === 'rename') {
-      result = await runCodexThreadCommand(threadId, 'rename', { name: payload.name });
+      const name = String(payload.name || '').replace(/\s+/g, ' ').trim();
+      if (!name) {
+        return json(res, 400, { ok: false, code: 'EMPTY_THREAD_NAME', message: '新名称不能为空。' });
+      }
+      if (name.length > 120) {
+        return json(res, 400, { ok: false, code: 'THREAD_NAME_TOO_LONG', message: '新名称太长，请控制在 120 个字符以内。' });
+      }
+      try {
+        await codexAppServer.setThreadName(threadId, name);
+        result = { message: '已重命名当前任务。', name, transport: 'app-server' };
+      } catch (appServerError) {
+        result = await runCodexThreadCommand(threadId, 'rename', { name });
+        result.transport = 'desktop-gui';
+        result.appServerError = appServerError.message || String(appServerError);
+      }
       state.titleOverrides = state.titleOverrides || {};
       state.titleOverrides[threadId] = { name: result.name, renamedAt: new Date().toISOString() };
     } else {
-      return json(res, 400, { ok: false, code: 'BAD_THREAD_ACTION', message: '不支持的线程操作。' });
+      return json(res, 400, { ok: false, code: 'BAD_THREAD_ACTION', message: '不支持的任务操作。' });
     }
     writeCodexMiniState(state);
     const nextThreadId = action === 'archive' ? (listCodexThreads(120)[0]?.id || '') : threadId;
     return json(res, 200, { ok: true, action, threadId, nextThreadId, ...result });
   } catch (error) {
     if (error && error.status) {
-      return json(res, error.status, { ok: false, code: error.code || 'BAD_REQUEST', message: error.message || '线程操作失败。' });
+      return json(res, error.status, { ok: false, code: error.code || 'BAD_REQUEST', message: error.message || '任务操作失败。' });
     }
     const explained = explainTargetError(error, 'codex');
     return json(res, 500, { ok: false, ...explained });
@@ -2701,12 +4086,17 @@ async function handleStopCodex(req, res) {
 
   const threadId = typeof payload.threadId === 'string' ? payload.threadId : '';
   if (threadId && !isCodexThreadId(threadId)) {
-    return json(res, 400, { ok: false, code: 'BAD_THREAD_ID', message: '线程 ID 不正确。' });
+    return json(res, 400, { ok: false, code: 'BAD_THREAD_ID', message: '任务 ID 不正确。' });
   }
 
   try {
+    const runtime = codexAppServer.runtimeForThread(threadId);
+    if (threadId && runtime?.status === 'running' && runtime.activeTurnId) {
+      await codexAppServer.interrupt(threadId, runtime.activeTurnId);
+      return json(res, 200, { ok: true, threadId, transport: 'app-server', message: '已停止当前回复。' });
+    }
     await stopCodexResponse(threadId);
-    return json(res, 200, { ok: true, threadId, message: '已向 Codex 发送终止指令。' });
+    return json(res, 200, { ok: true, threadId, transport: 'desktop-gui', message: '已向 ChatGPT Desktop 发送停止指令。' });
   } catch (error) {
     const explained = explainTargetError(error, 'codex');
     return json(res, 500, { ok: false, ...explained });
@@ -2729,6 +4119,40 @@ async function handleModelSwitch(req, res) {
   const target = typeof payload.target === 'string' ? payload.target : '';
   const assumeThreadSynced = payload.assumeThreadSynced === true;
   try {
+    if (isCodexThreadId(threadId) && target) {
+      try {
+        const models = await codexAppServer.listModels();
+        const model = models.find(item => item.id === target || item.model === target);
+        if (!model) {
+          const error = new Error('未找到这个模型。');
+          error.status = 400;
+          error.code = 'MODEL_TARGET_NOT_FOUND';
+          throw error;
+        }
+        const file = findCodexSessionFileByThreadId(threadId);
+        const current = file ? currentModelFromItems(readJsonlTailObjects(file, CODEX_SESSION_TAIL_BYTES)) : modelInfoFromId('');
+        await codexAppServer.updateThreadSettings(threadId, { model: model.model || model.id });
+        return json(res, 200, {
+          ok: true,
+          verified: true,
+          transport: 'app-server',
+          threadId,
+          currentModel: current,
+          targetModel: {
+            available: true,
+            key: model.id,
+            id: model.id,
+            label: labelFromModelName(model.displayName || model.id),
+            displayName: model.displayName || model.id,
+            source: 'app-server',
+            updatedAt: new Date().toISOString(),
+          },
+          message: `后续回复将使用 ${model.displayName || model.id}`,
+        });
+      } catch (appServerError) {
+        if (appServerError.status && appServerError.code !== 'MODEL_TARGET_NOT_FOUND') throw appServerError;
+      }
+    }
     const result = await switchCodexGuiModel(threadId, target, { assumeThreadSynced });
     return json(res, 200, result);
   } catch (error) {
@@ -2756,6 +4180,23 @@ async function handleReasoningMode(req, res) {
   const target = typeof payload.target === 'string' ? payload.target : '';
   const assumeThreadSynced = payload.assumeThreadSynced === true;
   try {
+    if (isCodexThreadId(threadId) && REASONING_MODE_TARGETS[target]) {
+      try {
+        const file = findCodexSessionFileByThreadId(threadId);
+        const current = file ? currentReasoningModeFromItems(readJsonlTailObjects(file, CODEX_SESSION_TAIL_BYTES)) : reasoningModeFromValue('');
+        const targetMode = REASONING_MODE_TARGETS[target];
+        await codexAppServer.updateThreadSettings(threadId, { effort: targetMode.value });
+        return json(res, 200, {
+          ok: true,
+          verified: true,
+          transport: 'app-server',
+          threadId,
+          currentReasoningMode: current,
+          targetReasoningMode: { ...targetMode, available: true, updatedAt: new Date().toISOString() },
+          message: `后续回复的推理等级为${targetMode.displayName}`,
+        });
+      } catch {}
+    }
     const result = await switchCodexReasoningMode(threadId, target, { assumeThreadSynced });
     return json(res, 200, result);
   } catch (error) {
@@ -2839,9 +4280,42 @@ async function handleSend(req, res) {
       });
     }
     const effectiveThreadId = selectedThreadId || (watchFile ? threadIdFromSessionFile(watchFile) : '');
-    const sendOptions = { assumeThreadSynced, expectNewThread, skipComposerClick: directPasteWithoutClick };
-    await pasteAndEnter(text, target, attachments, effectiveThreadId, sendOptions);
-    if (expectNewThread && watch) {
+    let directResult = null;
+    let appServerError = null;
+    if (target === 'codex') {
+      const fileStatus = effectiveThreadId ? parseCodexStatus({ threadId: effectiveThreadId }) : null;
+      const appRuntime = effectiveThreadId ? codexAppServer.runtimeForThread(effectiveThreadId) : null;
+      const externallyActive = Boolean(fileStatus?.active && !(appRuntime?.status === 'running' && appRuntime.activeTurnId));
+      if (!externallyActive) {
+        try {
+          directResult = await codexAppServer.sendTurn({
+            threadId: effectiveThreadId,
+            cwd: expectedNewThreadCwd,
+            text,
+            imagePaths: attachments.map(item => item.filePath),
+            clientUserMessageId: clientRequestId || undefined,
+          });
+          const directThreadId = directResult.threadId;
+          const directFile = findCodexSessionFileByThreadId(directThreadId);
+          watch = {
+            since: watchSince,
+            threadId: directThreadId,
+            sessionFile: directFile ? path.basename(directFile) : '',
+            expectNewThread: false,
+            excludeThreadId: '',
+            cwd: '',
+          };
+        } catch (error) {
+          appServerError = error;
+        }
+      }
+    }
+
+    if (!directResult) {
+      const sendOptions = { assumeThreadSynced, expectNewThread, skipComposerClick: directPasteWithoutClick };
+      await pasteAndEnter(text, target, attachments, effectiveThreadId, sendOptions);
+    }
+    if (!directResult && expectNewThread && watch) {
       const newSessionFile = await waitForCodexSessionFileForNewSend({
         sinceMs: watchSinceMs,
         text,
@@ -2860,13 +4334,17 @@ async function handleSend(req, res) {
     }
     const result = {
       ok: true,
-      message: target === 'codex' ? '已发送到 Codex。' : '已粘贴并按下回车。',
+      message: directResult
+        ? (directResult.steered ? '已追加到正在运行的任务。' : '已通过 Codex App Server 发送。')
+        : target === 'codex' ? '已发送到 ChatGPT Desktop。' : '已粘贴并按下回车。',
       target,
+      transport: directResult ? 'app-server' : target === 'codex' ? 'desktop-gui' : 'frontmost',
       sentAt: new Date().toISOString(),
       attachments: attachments.map(item => ({ name: item.name, size: item.size, type: item.mime })),
       watch,
       focusFallback: '',
     };
+    if (appServerError) result.appServerError = appServerError.message || String(appServerError);
     if (clientRequestId) {
       recentSendRequests.set(clientRequestId, {
         createdAt: Date.now(),
@@ -2925,15 +4403,35 @@ function getLanApiBases() {
   return [...bases];
 }
 
-function handleClientConfig(req, res) {
+async function handleClientConfig(req, res) {
   if (!isAuthorized(req)) return json(res, 401, { ok: false, code: 'UNAUTHORIZED', message: '访问令牌不正确。' });
+  let modelOptions = readModelCatalogOptions();
+  let transport = 'session-files';
+  try {
+    const models = await codexAppServer.listModels();
+    if (models.length) {
+      const appServerModels = models.map(model => ({
+        key: model.id,
+        id: model.id,
+        label: labelFromModelName(model.displayName || model.id),
+        displayName: model.displayName || model.id,
+        source: 'app-server',
+        isDefault: model.isDefault === true,
+        supportedReasoningEfforts: (model.supportedReasoningEfforts || []).map(item => item.reasoningEffort).filter(Boolean),
+      }));
+      modelOptions = mergeModelOptions(modelOptions, appServerModels);
+      transport = 'app-server';
+    }
+  } catch {}
   return json(res, 200, {
     ok: true,
     service: 'codex-max',
     appName: APP_NAME,
     localOnly: true,
     localApiBases: getLanApiBases(),
-    modelOptions: readModelCatalogOptions(),
+    transport,
+    modelOptions,
+    reasoningOptions: Object.values(REASONING_MODE_TARGETS),
   });
 }
 
@@ -2956,7 +4454,8 @@ async function handleHealth(req, res) {
     service: 'codex-max',
     host: os.hostname(),
     platform: platform.name,
-    controlMode: cdp && cdp.available ? 'cdp' : 'gui',
+    controlMode: codexAppServer.isAvailable() ? 'app-server' : cdp && cdp.available ? 'cdp' : 'gui',
+    appServer: codexAppServer.status(),
     cdp,
     now: new Date().toISOString(),
   });
@@ -2968,7 +4467,7 @@ async function handleCdpLaunch(req, res) {
     return json(res, 400, {
       ok: false,
       code: 'CDP_LAUNCH_UNSUPPORTED',
-      message: '当前平台不支持从 Codex Max 启动 CDP 受控版 Codex。',
+      message: '当前平台不支持从 ChatGPT Win 启动 CDP 受控版 ChatGPT。',
     });
   }
 
@@ -3039,14 +4538,43 @@ function getLanUrls() {
   return [...urls];
 }
 
+function handleHistoryAttachment(req, res) {
+  if (!isAuthorized(req)) return json(res, 401, { ok: false, code: 'UNAUTHORIZED', message: '访问令牌不正确。' });
+  const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+  const id = String(url.searchParams.get('id') || '');
+  const item = historyAttachmentCache.get(id);
+  if (!item || item.expiresAt <= Date.now()) {
+    historyAttachmentCache.delete(id);
+    return json(res, 404, { ok: false, code: 'ATTACHMENT_NOT_FOUND', message: '图片预览已失效，请刷新任务记录。' });
+  }
+  try {
+    const stat = fs.lstatSync(item.filePath);
+    if (!stat.isFile() || stat.isSymbolicLink() || stat.size <= 0 || stat.size > MAX_ATTACHMENT_BYTES) throw new Error('图片文件不可用。');
+    res.writeHead(200, { 'Content-Type': item.mime, 'Content-Length': stat.size, 'Cache-Control': 'private, max-age=300', 'X-Content-Type-Options': 'nosniff' });
+    fs.createReadStream(item.filePath).on('error', () => res.destroy()).pipe(res);
+  } catch {
+    historyAttachmentCache.delete(id);
+    return json(res, 404, { ok: false, code: 'ATTACHMENT_NOT_FOUND', message: '图片文件不可用。' });
+  }
+}
+
 const server = http.createServer((req, res) => {
   if (req.method === 'OPTIONS') return options(res);
   if (req.method === 'GET' && req.url.startsWith('/codex/health')) return handleHealth(req, res);
+  if (req.method === 'GET' && req.url.startsWith('/codex/attachment')) return handleHistoryAttachment(req, res);
   if (req.method === 'GET' && req.url.startsWith('/codex/config')) return handleClientConfig(req, res);
+  if (req.method === 'GET' && req.url.startsWith('/codex/environment')) return handleEnvironment(req, res);
+  if (req.method === 'POST' && req.url.startsWith('/codex/git-action')) return handleGitAction(req, res);
   if (req.method === 'POST' && req.url.startsWith('/codex/cdp-launch')) return handleCdpLaunch(req, res);
   if (req.method === 'POST' && req.url.startsWith('/send')) return handleSend(req, res);
   if (req.method === 'GET' && req.url.startsWith('/codex/threads')) return handleThreads(req, res);
+  if (req.method === 'GET' && req.url.startsWith('/codex/archived')) return handleArchivedThreads(req, res);
+  if (req.method === 'GET' && req.url.startsWith('/codex/pull-requests')) return handlePullRequests(req, res);
+  if (req.method === 'GET' && req.url.startsWith('/codex/plugins')) return handlePlugins(req, res);
+  if ((req.method === 'GET' || req.method === 'POST') && req.url.startsWith('/codex/schedules')) return handleSchedules(req, res);
   if (req.method === 'GET' && req.url.startsWith('/codex/history')) return handleThreadHistory(req, res);
+  if (req.method === 'GET' && req.url.startsWith('/codex/approvals')) return handleCodexApprovals(req, res);
+  if (req.method === 'POST' && req.url.startsWith('/codex/approval')) return handleCodexApproval(req, res);
   if (req.method === 'GET' && req.url.startsWith('/codex/status')) return handleCodexStatus(req, res);
   if ((req.method === 'GET' || req.method === 'POST') && req.url.startsWith('/codex/keep-awake')) return handleKeepAwake(req, res);
   if (req.method === 'POST' && req.url.startsWith('/codex/select')) return handleSelectThread(req, res);
@@ -3060,19 +4588,28 @@ const server = http.createServer((req, res) => {
 });
 
 server.listen(PORT, HOST, () => {
+  startScheduledTaskRunner();
   const urls = getLanUrls();
-  console.log('\nCodex mini is running.');
+  console.log('\nChatGPT Win is running.');
   console.log('Keep this terminal open, make sure Codex Desktop is available, then open one of these URLs on your phone:');
   for (const url of urls) console.log(`  ${url}`);
   console.log('\nTip: phone and this computer must be on the same Wi‑Fi/LAN. Press Ctrl+C to stop.\n');
 });
 
-process.on('exit', cleanupKeepAwake);
-process.on('SIGINT', () => {
+process.on('exit', () => {
+  stopScheduledTaskRunner();
   cleanupKeepAwake();
+  codexAppServer.close();
+});
+process.on('SIGINT', () => {
+  stopScheduledTaskRunner();
+  cleanupKeepAwake();
+  codexAppServer.close();
   process.exit(130);
 });
 process.on('SIGTERM', () => {
+  stopScheduledTaskRunner();
   cleanupKeepAwake();
+  codexAppServer.close();
   process.exit(143);
 });

@@ -6,7 +6,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot '..')
 if (-not $OutputDir) {
-  $OutputDir = Join-Path $repoRoot 'dist\windows\Codex Max SingleExe'
+  $OutputDir = Join-Path $repoRoot 'dist\windows\ChatGPT Win SingleExe'
 }
 
 if (Test-Path -LiteralPath $OutputDir) {
@@ -14,4 +14,4 @@ if (Test-Path -LiteralPath $OutputDir) {
 }
 
 & (Join-Path $repoRoot 'scripts\build-codex-max-windows.ps1') -OutputDir $OutputDir -NodePath $NodePath -SingleExe
-Write-Host "Windows single exe: $(Join-Path $OutputDir 'Codex Max.exe')"
+Write-Host "Windows single exe: $(Join-Path $OutputDir 'ChatGPT Win.exe')"

@@ -1,22 +1,24 @@
 param(
   [string]$NodePath = "",
   [string]$InnoCompiler = "",
-  [switch]$SelfContained
+  [switch]$SelfContained,
+  [switch]$FrameworkDependent
 )
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot '..')
-$payloadDir = Join-Path $repoRoot 'dist\windows\Codex Max InstallerPayload'
+$payloadDir = Join-Path $repoRoot 'dist\windows\ChatGPT Win InstallerPayload'
 $installerDir = Join-Path $repoRoot 'dist\windows\installer'
 
 $buildArgs = @{
   OutputDir = $payloadDir
   NodePath = $NodePath
 }
-if ($SelfContained) {
-  & (Join-Path $repoRoot 'scripts\build-codex-max-windows.ps1') @buildArgs -SelfContained
-} else {
+if ($FrameworkDependent) {
   & (Join-Path $repoRoot 'scripts\build-codex-max-windows.ps1') @buildArgs
+} else {
+  # An installer must run on a clean Windows installation without requiring .NET.
+  & (Join-Path $repoRoot 'scripts\build-codex-max-windows.ps1') @buildArgs -SelfContained
 }
 
 if (-not $InnoCompiler) {

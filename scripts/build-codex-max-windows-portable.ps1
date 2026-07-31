@@ -8,10 +8,10 @@ param(
 $ErrorActionPreference = 'Stop'
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot '..')
 if (-not $OutputDir) {
-  $OutputDir = Join-Path $repoRoot 'dist\windows\Codex Max Portable'
+  $OutputDir = Join-Path $repoRoot 'dist\windows\ChatGPT Win Portable'
 }
 if (-not $ZipPath) {
-  $ZipPath = Join-Path $repoRoot 'dist\windows\Codex-Max-Windows-Portable.zip'
+  $ZipPath = Join-Path $repoRoot 'dist\windows\ChatGPT-Win-Windows-Portable.zip'
 }
 
 if (Test-Path -LiteralPath $OutputDir) {

@@ -15,3 +15,10 @@ macos/CodexMini/CodexMini/Resources/node/
 windows/CodexMini/bin/
 windows/CodexMini/obj/
 windows/CodexMini/CodexMaxPayload.zip
+
+# Android build output and machine-local SDK configuration.
+android/**/.gradle/
+android/**/build/
+android/**/local.properties
+android/**/release-signing.properties
+android/**/signing/

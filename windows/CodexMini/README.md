@@ -1,6 +1,6 @@
-# Codex Max App
+# ChatGPT Win App
 
-This folder contains the Windows client wrapper for the local Codex Max service.
+This folder contains the Windows client wrapper for the local ChatGPT Win service.
 It mirrors the macOS app responsibilities:
 
 - prepare the local service payload
