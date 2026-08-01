@@ -86,6 +86,33 @@ const DESKTOP_MODEL_OPTIONS = [
 ];
 const recentSendRequests = new Map();
 let lastCodexThreadActivation = { threadId: '', at: 0 };
+// ----- Simple in-memory token bucket rate limiter -----
+const RATE_LIMIT_RPM = Math.max(10, Math.min(6000, Number(process.env.CODEX_MAX_RATE_LIMIT_RPM) || 120));
+const RATE_LIMIT_BURST = Math.max(1, Math.min(100, Math.floor(RATE_LIMIT_RPM / 6) || 20));
+const rateLimitBuckets = new Map();
+const RATE_LIMIT_CLEANUP_INTERVAL = 60000;
+
+function rateLimitCheck(ip) {
+  const now = Date.now();
+  let bucket = rateLimitBuckets.get(ip);
+  if (!bucket || now - bucket.resetAt >= 60000) {
+    bucket = { tokens: RATE_LIMIT_BURST, resetAt: now + 60000 };
+    rateLimitBuckets.set(ip, bucket);
+  }
+  if (bucket.tokens > 0) {
+    bucket.tokens -= 1;
+    return true;
+  }
+  return false;
+}
+
+setInterval(() => {
+  const cutoff = Date.now();
+  for (const [ip, bucket] of rateLimitBuckets) {
+    if (cutoff - bucket.resetAt >= 120000) rateLimitBuckets.delete(ip);
+  }
+}, RATE_LIMIT_CLEANUP_INTERVAL);
+// -----------------------------------------------------
 let codexSessionFilesCache = { at: 0, files: [] };
 let threadIndexCache = { mtimeMs: 0, size: 0, byId: null };
 const sessionMetaCache = new Map();
