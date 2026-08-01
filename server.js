@@ -14,7 +14,30 @@ const { CodexAppServer } = require('./src/codex-app-server');
 const APP_NAME = process.env.CODEX_MAX_APP_NAME || process.env.CODEX_MINI_APP_NAME || 'ChatGPT Win';
 const PORT = Number(process.env.PORT || 8787);
 const HOST = process.env.HOST || '0.0.0.0';
-const TOKEN = process.env.MOBILE_TYPER_TOKEN || crypto.randomBytes(12).toString('base64url');
+
+function loadPersistedToken() {
+  try {
+    const stored = fs.readFileSync(TOKEN_FILE, 'utf8').trim();
+    return /^[A-Za-z0-9_-]{16,64}$/.test(stored) ? stored : '';
+  } catch {
+    return '';
+  }
+}
+
+function persistToken(token) {
+  try {
+    fs.mkdirSync(STATE_DIR, { recursive: true });
+    fs.writeFileSync(TOKEN_FILE, token, { encoding: 'utf8', mode: 0o600 });
+  } catch (error) {
+    console.warn('[token] 保存访问令牌失败:', error.message || error);
+  }
+}
+
+function rotateAccessToken() {
+  TOKEN = crypto.randomBytes(12).toString('base64url');
+  persistToken(TOKEN);
+  return TOKEN;
+}
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const MAX_BODY_BYTES = Number(process.env.CODEX_MAX_MAX_BODY_BYTES || process.env.CODEX_MINI_MAX_BODY_BYTES || 28 * 1024 * 1024);
 const MAX_TEXT_LENGTH = 8000;
@@ -25,6 +48,8 @@ const HISTORY_ATTACHMENT_TTL_MS = 60 * 60 * 1000;
 const HISTORY_ATTACHMENT_LIMIT = 600;
 const STATE_DIR = process.env.CODEX_MAX_STATE_DIR || process.env.CODEX_MINI_STATE_DIR || path.join(os.homedir(), '.codex-max');
 const STATE_FILE = path.join(STATE_DIR, 'state.json');
+const TOKEN_FILE = path.join(STATE_DIR, 'token');
+let TOKEN = process.env.MOBILE_TYPER_TOKEN || loadPersistedToken() || crypto.randomBytes(12).toString('base64url');
 const codexAppServer = new CodexAppServer({ cwd: __dirname });
 
 const CODEX_SESSIONS_DIR = path.join(os.homedir(), '.codex', 'sessions');
@@ -3066,17 +3091,37 @@ function readBody(req) {
   return new Promise((resolve, reject) => {
     let size = 0;
     const chunks = [];
-    req.on('data', chunk => {
+    let settled = false;
+    const fail = error => {
+      if (settled) return;
+      settled = true;
+      req.removeListener('data', onData);
+      req.removeListener('end', onEnd);
+      reject(error);
+    };
+    const onData = chunk => {
+      if (settled) return;
       size += chunk.length;
       if (size > MAX_BODY_BYTES) {
-        reject(Object.assign(new Error('输入太长了，请分段发送。'), { status: 413 }));
+        fail(Object.assign(new Error('输入太长了，请分段发送。'), { status: 413 }));
         req.destroy();
         return;
       }
       chunks.push(chunk);
+    };
+    const onEnd = () => {
+      if (settled) return;
+      settled = true;
+      resolve(Buffer.concat(chunks).toString('utf8'));
+    };
+    const timer = setTimeout(() => fail(Object.assign(new Error('请求读取超时，请稍后再试。'), { status: 408 })), 30000);
+    if (timer.unref) timer.unref();
+    req.on('data', onData);
+    req.on('end', onEnd);
+    req.on('error', error => {
+      clearTimeout(timer);
+      fail(error);
     });
-    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
-    req.on('error', reject);
   });
 }
 
@@ -4565,6 +4610,18 @@ function getLanUrls() {
   return [...urls];
 }
 
+async function handleRotateToken(req, res) {
+  if (!isAuthorized(req)) return json(res, 401, { ok: false, code: 'UNAUTHORIZED', message: '访问令牌不正确。' });
+  if (req.method !== 'POST') return json(res, 405, { ok: false, code: 'METHOD_NOT_ALLOWED', message: 'Method not allowed' });
+  const nextToken = rotateAccessToken();
+  return json(res, 200, {
+    ok: true,
+    token: nextToken,
+    urls: getLanUrls(),
+    message: '访问令牌已轮换，请使用新的链接重新连接。',
+  });
+}
+
 function handleHistoryAttachment(req, res) {
   if (!isAuthorized(req)) return json(res, 401, { ok: false, code: 'UNAUTHORIZED', message: '访问令牌不正确。' });
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
@@ -4587,7 +4644,16 @@ function handleHistoryAttachment(req, res) {
 
 const server = http.createServer((req, res) => {
   if (req.method === 'OPTIONS') return options(res);
+  // Rate limiting - skip for health check
+  if (!req.url.startsWith('/codex/health')) {
+    const clientIp = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket?.remoteAddress || 'unknown';
+    if (!rateLimitCheck(clientIp)) {
+      res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': '60' });
+      return res.end(JSON.stringify({ error: 'rate_limit_exceeded', message: '请求过于频繁，请稍后再试。' }));
+    }
+  }
   if (req.method === 'GET' && req.url.startsWith('/codex/health')) return handleHealth(req, res);
+  if (req.method === 'POST' && req.url.startsWith('/codex/rotate-token')) return handleRotateToken(req, res);
   if (req.method === 'GET' && req.url.startsWith('/codex/attachment')) return handleHistoryAttachment(req, res);
   if (req.method === 'GET' && req.url.startsWith('/codex/config')) return handleClientConfig(req, res);
   if (req.method === 'GET' && req.url.startsWith('/codex/environment')) return handleEnvironment(req, res);
