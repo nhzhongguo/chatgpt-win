@@ -33,9 +33,23 @@ function persistToken(token) {
   }
 }
 
+function syncLauncherToken(token) {
+  if (process.platform !== 'win32') return;
+  try {
+    const launcherPath = path.join(os.homedir(), 'AppData', 'Roaming', 'ChatGPT Win', 'launcher.json');
+    if (!fs.existsSync(launcherPath)) return;
+    const config = JSON.parse(fs.readFileSync(launcherPath, 'utf8'));
+    if (config && typeof config === 'object' && config.token !== token) {
+      config.token = token;
+      fs.writeFileSync(launcherPath, JSON.stringify(config, null, 2), 'utf8');
+    }
+  } catch {}
+}
+
 function rotateAccessToken() {
   TOKEN = crypto.randomBytes(12).toString('base64url');
   persistToken(TOKEN);
+  syncLauncherToken(TOKEN);
   return TOKEN;
 }
 const PUBLIC_DIR = path.join(__dirname, 'public');
@@ -55,7 +69,7 @@ const DIST_WINDOWS_INSTALLER_DIR = path.join(DIST_DIR, 'windows', 'installer');
 const SERVICE_VERSION = (() => {
   try { return require('./package.json').version || '0.0.0'; } catch { return '0.0.0'; }
 })();
-let TOKEN = process.env.MOBILE_TYPER_TOKEN || loadPersistedToken() || crypto.randomBytes(12).toString('base64url');
+let TOKEN = loadPersistedToken() || process.env.MOBILE_TYPER_TOKEN || crypto.randomBytes(12).toString('base64url');
 const codexAppServer = new CodexAppServer({ cwd: __dirname });
 
 const CODEX_SESSIONS_DIR = path.join(os.homedir(), '.codex', 'sessions');

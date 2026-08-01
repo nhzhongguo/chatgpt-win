@@ -384,6 +384,13 @@ internal sealed class ServiceManager
         catch
         {
         }
+        var persistedToken = ReadPersistedToken();
+        if (!string.IsNullOrWhiteSpace(persistedToken))
+        {
+            var config = new LauncherConfig { Token = persistedToken, Port = DefaultPort };
+            WriteConfig(config);
+            return config;
+        }
         return new LauncherConfig { Token = GenerateToken(), Port = DefaultPort };
     }
 
@@ -553,6 +560,24 @@ internal sealed class ServiceManager
             if (!File.Exists(file)) return "";
             var text = File.ReadAllText(file);
             return text.Length <= maxChars ? text : text[^maxChars..];
+        }
+        catch
+        {
+            return "";
+        }
+    }
+
+    private static string ReadPersistedToken()
+    {
+        try
+        {
+            var tokenFile = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                ".codex-max",
+                "token");
+            if (!File.Exists(tokenFile)) return "";
+            var token = File.ReadAllText(tokenFile).Trim();
+            return token.Length >= 16 && token.Length <= 64 ? token : "";
         }
         catch
         {
