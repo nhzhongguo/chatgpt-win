@@ -49,6 +49,12 @@ const HISTORY_ATTACHMENT_LIMIT = 600;
 const STATE_DIR = process.env.CODEX_MAX_STATE_DIR || process.env.CODEX_MINI_STATE_DIR || path.join(os.homedir(), '.codex-max');
 const STATE_FILE = path.join(STATE_DIR, 'state.json');
 const TOKEN_FILE = path.join(STATE_DIR, 'token');
+const DIST_DIR = path.join(__dirname, 'dist');
+const DIST_ANDROID_DIR = path.join(DIST_DIR, 'android');
+const DIST_WINDOWS_INSTALLER_DIR = path.join(DIST_DIR, 'windows', 'installer');
+const SERVICE_VERSION = (() => {
+  try { return require('./package.json').version || '0.0.0'; } catch { return '0.0.0'; }
+})();
 let TOKEN = process.env.MOBILE_TYPER_TOKEN || loadPersistedToken() || crypto.randomBytes(12).toString('base64url');
 const codexAppServer = new CodexAppServer({ cwd: __dirname });
 
@@ -4464,6 +4470,57 @@ function serveStatic(req, res) {
   });
 }
 
+function parseVersionParts(version) {
+  return String(version || '').split('.').map(part => {
+    const n = Number.parseInt(part, 10);
+    return Number.isFinite(n) ? n : 0;
+  });
+}
+
+function compareVersions(a, b) {
+  const ap = parseVersionParts(a);
+  const bp = parseVersionParts(b);
+  for (let i = 0; i < Math.max(ap.length, bp.length); i += 1) {
+    const diff = (ap[i] || 0) - (bp[i] || 0);
+    if (diff !== 0) return diff;
+  }
+  return 0;
+}
+
+function latestAndroidApkInfo() {
+  let best = null;
+  try {
+    for (const entry of fs.readdirSync(DIST_ANDROID_DIR, { withFileTypes: true })) {
+      const match = /^ChatGPT-AZ-Android-v([\d.]+)\.apk$/i.exec(entry.name);
+      if (!match || !entry.isFile()) continue;
+      const candidate = { version: match[1], name: entry.name };
+      if (!best || compareVersions(candidate.version, best.version) > 0) best = candidate;
+    }
+  } catch {}
+  return best;
+}
+
+function latestWindowsInstallerInfo() {
+  try {
+    const file = path.join(DIST_WINDOWS_INSTALLER_DIR, 'ChatGPT-Win-Windows-Setup.exe');
+    if (fs.existsSync(file)) {
+      const stat = fs.statSync(file);
+      return { version: SERVICE_VERSION, name: 'ChatGPT-Win-Windows-Setup.exe', size: stat.size };
+    }
+  } catch {}
+  return null;
+}
+
+function updateInfo() {
+  const android = latestAndroidApkInfo();
+  const windows = latestWindowsInstallerInfo();
+  return {
+    service: SERVICE_VERSION,
+    android: android ? { latestVersion: android.version, fileName: android.name, available: true } : { available: false },
+    windows: windows ? { latestVersion: windows.version, fileName: windows.name, size: windows.size, available: true } : { available: false },
+  };
+}
+
 function getLanApiBases() {
   const nets = os.networkInterfaces();
   const bases = new Set();
@@ -4504,6 +4561,7 @@ async function handleClientConfig(req, res) {
     transport,
     modelOptions,
     reasoningOptions: Object.values(REASONING_MODE_TARGETS),
+    update: updateInfo(),
   });
 }
 
@@ -4610,6 +4668,49 @@ function getLanUrls() {
   return [...urls];
 }
 
+async function handleDownload(req, res) {
+  if (!isAuthorized(req)) return json(res, 401, { ok: false, code: 'UNAUTHORIZED', message: '访问令牌不正确。' });
+  const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+  const kind = String(url.searchParams.get('file') || '');
+  if (kind === 'android') {
+    const info = latestAndroidApkInfo();
+    if (!info) return json(res, 404, { ok: false, code: 'UPDATE_NOT_FOUND', message: '没有可用的 Android 安装包。' });
+    const filePath = path.join(DIST_ANDROID_DIR, info.name);
+    try {
+      const stat = fs.statSync(filePath);
+      res.writeHead(200, {
+        'Content-Type': 'application/vnd.android.package-archive',
+        'Content-Length': stat.size,
+        'Content-Disposition': `attachment; filename="${info.name}"`,
+        'Cache-Control': 'no-store',
+      });
+      fs.createReadStream(filePath).on('error', () => res.destroy()).pipe(res);
+    } catch {
+      return json(res, 404, { ok: false, code: 'UPDATE_NOT_FOUND', message: 'Android 安装包不可用。' });
+    }
+    return;
+  }
+  if (kind === 'windows-installer') {
+    const info = latestWindowsInstallerInfo();
+    if (!info) return json(res, 404, { ok: false, code: 'UPDATE_NOT_FOUND', message: '没有可用的 Windows 安装包。' });
+    const filePath = path.join(DIST_WINDOWS_INSTALLER_DIR, info.name);
+    try {
+      const stat = fs.statSync(filePath);
+      res.writeHead(200, {
+        'Content-Type': 'application/octet-stream',
+        'Content-Length': stat.size,
+        'Content-Disposition': `attachment; filename="${info.name}"`,
+        'Cache-Control': 'no-store',
+      });
+      fs.createReadStream(filePath).on('error', () => res.destroy()).pipe(res);
+    } catch {
+      return json(res, 404, { ok: false, code: 'UPDATE_NOT_FOUND', message: 'Windows 安装包不可用。' });
+    }
+    return;
+  }
+  return json(res, 400, { ok: false, code: 'BAD_REQUEST', message: '未知的下载类型。' });
+}
+
 async function handleRotateToken(req, res) {
   if (!isAuthorized(req)) return json(res, 401, { ok: false, code: 'UNAUTHORIZED', message: '访问令牌不正确。' });
   if (req.method !== 'POST') return json(res, 405, { ok: false, code: 'METHOD_NOT_ALLOWED', message: 'Method not allowed' });
@@ -4654,6 +4755,7 @@ const server = http.createServer((req, res) => {
   }
   if (req.method === 'GET' && req.url.startsWith('/codex/health')) return handleHealth(req, res);
   if (req.method === 'POST' && req.url.startsWith('/codex/rotate-token')) return handleRotateToken(req, res);
+  if (req.method === 'GET' && req.url.startsWith('/codex/download')) return handleDownload(req, res);
   if (req.method === 'GET' && req.url.startsWith('/codex/attachment')) return handleHistoryAttachment(req, res);
   if (req.method === 'GET' && req.url.startsWith('/codex/config')) return handleClientConfig(req, res);
   if (req.method === 'GET' && req.url.startsWith('/codex/environment')) return handleEnvironment(req, res);

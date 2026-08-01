@@ -34,6 +34,7 @@ test('All required route handlers are defined', () => {
     '/codex/cdp-launch', '/codex/pull-requests', '/codex/plugins',
     '/codex/schedules', '/codex/thread-action',
     '/send', '/codex/attachment',
+    '/codex/download', '/codex/rotate-token',
   ];
   for (const route of routes) {
     assert.ok(src.includes(route), 'Route ' + route + ' is defined');
