@@ -9,6 +9,6 @@
     "node": ">=18"
   },
   "name": "chatgpt-win",
-  "version": "3.1.0",
+  "version": "3.1.1",
   "description": "Local phone-to-ChatGPT desktop bridge for Windows"
 }

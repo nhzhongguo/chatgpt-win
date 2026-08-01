@@ -20,6 +20,14 @@ import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import java.io.BufferedReader;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
+
+import org.json.JSONObject;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.TextView;
@@ -65,6 +73,7 @@ public final class MainActivity extends AppCompatActivity {
     private boolean pageLoaded;
     private Insets latestSystemBars = Insets.NONE;
     private int latestKeyboardHeight;
+    private String updatePromptedForVersion;
 
     private final ActivityResultLauncher<ScanOptions> scanner = registerForActivityResult(
             new ScanContract(),
@@ -338,6 +347,7 @@ public final class MainActivity extends AppCompatActivity {
                 applyWebViewportInsets();
                 if (activeConnection != null) {
                     CodexMonitorService.start(MainActivity.this, activeConnection.normalizedUrl());
+                    checkForUpdate();
                 }
             }
 
@@ -429,6 +439,82 @@ public final class MainActivity extends AppCompatActivity {
         statusText.setText(message);
         statusText.setTextColor(getColor(error ? R.color.danger : R.color.text_secondary));
         statusText.setVisibility(message.isBlank() ? View.GONE : View.VISIBLE);
+    }
+
+    private void checkForUpdate() {
+        final ConnectionUrl connection = activeConnection;
+        if (connection == null) return;
+        Thread thread = new Thread(() -> {
+            HttpURLConnection http = null;
+            try {
+                URL url = new URL(connection.configUrl());
+                http = (HttpURLConnection) url.openConnection();
+                http.setConnectTimeout(4000);
+                http.setReadTimeout(4000);
+                http.setRequestProperty("x-mobile-typer-token", connection.token());
+                int code = http.getResponseCode();
+                if (code != 200) return;
+                String body = readStream(http.getInputStream());
+                JSONObject root = new JSONObject(body);
+                JSONObject update = root.optJSONObject("update");
+                if (update == null) return;
+                JSONObject androidUpdate = update.optJSONObject("android");
+                if (androidUpdate == null || !androidUpdate.optBoolean("available")) return;
+                String latest = androidUpdate.optString("latestVersion");
+                if (latest.isEmpty() || compareVersions(latest, BuildConfig.VERSION_NAME) <= 0) return;
+                runOnUiThread(() -> promptUpdate(connection, latest));
+            } catch (Exception ignored) {
+                // Update checks are best-effort; connection failures should not disturb usage.
+            } finally {
+                if (http != null) http.disconnect();
+            }
+        });
+        thread.setDaemon(true);
+        thread.start();
+    }
+
+    private void promptUpdate(ConnectionUrl connection, String latestVersion) {
+        if (latestVersion.equals(updatePromptedForVersion)) return;
+        updatePromptedForVersion = latestVersion;
+        String message = getString(R.string.update_available, latestVersion);
+        Snackbar.make(findViewById(R.id.root), message, Snackbar.LENGTH_LONG)
+                .setAction(getString(R.string.update_download), view -> {
+                    try {
+                        startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(connection.downloadUrl())));
+                    } catch (RuntimeException error) {
+                        showMessage(getString(R.string.external_link_failed));
+                    }
+                })
+                .show();
+    }
+
+    private static int compareVersions(String left, String right) {
+        String[] leftParts = left.split("\\.");
+        String[] rightParts = right.split("\\.");
+        int length = Math.max(leftParts.length, rightParts.length);
+        for (int i = 0; i < length; i += 1) {
+            int leftValue = i < leftParts.length ? parseVersionPart(leftParts[i]) : 0;
+            int rightValue = i < rightParts.length ? parseVersionPart(rightParts[i]) : 0;
+            if (leftValue != rightValue) return Integer.compare(leftValue, rightValue);
+        }
+        return 0;
+    }
+
+    private static int parseVersionPart(String part) {
+        try {
+            return Integer.parseInt(part.trim());
+        } catch (NumberFormatException ignored) {
+            return 0;
+        }
+    }
+
+    private static String readStream(InputStream input) throws Exception {
+        StringBuilder builder = new StringBuilder();
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(input, StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = reader.readLine()) != null) builder.append(line);
+        }
+        return builder.toString();
     }
 
     private void showMessage(String message) {

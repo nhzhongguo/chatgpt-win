@@ -34,6 +34,20 @@ public class ConnectionUrlTest {
     }
 
     @Test
+    public void exposesConfigAndDownloadUrls() {
+        ConnectionUrl value = ConnectionUrl.parse("http://192.168.1.20:8787/?token=test").value();
+        assertEquals(
+                "http://192.168.1.20:8787/codex/config?token=test",
+                value.configUrl()
+        );
+        assertEquals(
+                "http://192.168.1.20:8787/codex/download?file=android&token=test",
+                value.downloadUrl()
+        );
+        assertEquals("test", value.token());
+    }
+
+    @Test
     public void comparesOriginsUsingDefaultPorts() {
         ConnectionUrl value = ConnectionUrl.parse("http://192.168.1.20/?token=test").value();
         assertTrue(value.hasSameOrigin("http://192.168.1.20/codex/threads"));

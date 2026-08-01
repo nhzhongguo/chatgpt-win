@@ -52,4 +52,6 @@
     <string name="task_completed">Codex 任务已完成</string>
     <string name="task_failed">Codex 任务执行失败</string>
     <string name="tap_to_open">点按返回 ChatGPT AZ</string>
+    <string name="update_available">发现新版本 v%1$s，是否下载更新？</string>
+    <string name="update_download">下载</string>
 </resources>

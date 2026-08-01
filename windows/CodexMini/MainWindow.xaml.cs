@@ -42,6 +42,7 @@ public partial class MainWindow : Window
                 await service.StartAsync();
             });
             await RefreshStateAsync();
+            await CheckUpdateOnceAsync();
             refreshTimer.Start();
         };
         Closed += (_, _) => refreshTimer.Stop();
@@ -131,6 +132,21 @@ public partial class MainWindow : Window
             else await service.StartAsync();
         });
         await RefreshStateAsync();
+    }
+
+    private bool updateChecked;
+
+    private async Task CheckUpdateOnceAsync()
+    {
+        if (updateChecked) return;
+        updateChecked = true;
+        var message = await service.CheckForUpdateAsync();
+        if (!string.IsNullOrWhiteSpace(message))
+        {
+            WpfMessageBox.Show(this, message + Environment.NewLine + Environment.NewLine +
+                "可从“打开安装包/APK 位置”按钮查看构建产物，或在电脑端项目目录重新构建。",
+                "发现新版本", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
     }
 
     private async Task RefreshStateAsync()

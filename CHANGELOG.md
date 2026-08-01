@@ -1,5 +1,14 @@
 # Changelog
 
+# 3.1.2 (2026-08-01)
+
+- Feat: Android in-app update check (prompts when server has a newer APK)
+- Feat: Windows launcher startup update check
+- Feat: /codex/rotate-token endpoint with persisted token rotation
+- Feat: /codex/download endpoint for authenticated APK/installer downloads
+- Feat: /codex/config exposes update versions for all platforms
+- Chore: bump Android to v1.2.7 and service to v3.1.1
+
 # 3.1.1 (2026-08-01)
 
 - Fix: mobile settings page cannot scroll vertically on Android WebView
@@ -61,7 +70,8 @@
 | v1.2.3  | UI adjustments |
 | v1.2.4  | Screen fit options |
 | v1.2.5  | Monitor service refinements |
-| v1.2.6  | Latest - stable release |
+| v1.2.6  | Stable release |
+| v1.2.7  | Latest - in-app update check, download endpoint |
 
 ## Windows installer versions
 

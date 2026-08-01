@@ -288,6 +288,54 @@ internal sealed class ServiceManager
         return (await GetHealthAsync(config)).Ok;
     }
 
+    public async Task<string?> CheckForUpdateAsync()
+    {
+        var config = ReadConfig();
+        try
+        {
+            var url = $"http://127.0.0.1:{config.Port}/codex/config?token={Uri.EscapeDataString(config.Token)}";
+            using var response = await http.GetAsync(url);
+            if (!response.IsSuccessStatusCode) return null;
+            var payload = await response.Content.ReadFromJsonAsync<ClientConfigResponse>(JsonOptions);
+            var update = payload?.Update;
+            if (update is null) return null;
+
+            var lines = new List<string>();
+            var currentVersion = typeof(ServiceManager).Assembly.GetName().Version?.ToString(3) ?? "3.1.1";
+            if (update.Windows is { Available: true } windows &&
+                TryParseVersion(windows.LatestVersion, out var latestWindows) &&
+                TryParseVersion(currentVersion, out var current) &&
+                latestWindows > current)
+            {
+                lines.Add($"电脑版新版本 v{windows.LatestVersion} 可下载安装。");
+            }
+
+            if (update.Android is { Available: true } android && !string.IsNullOrWhiteSpace(android.LatestVersion))
+            {
+                var localApk = AndroidApkPath;
+                var localVersion = localApk != null && File.Exists(localApk)
+                    ? Path.GetFileNameWithoutExtension(localApk)
+                    : "";
+                if (localVersion.IndexOf(android.LatestVersion, StringComparison.OrdinalIgnoreCase) < 0)
+                {
+                    lines.Add($"Android 客户端最新版本 v{android.LatestVersion}。");
+                }
+            }
+
+            return lines.Count == 0 ? null : string.Join(Environment.NewLine, lines);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static bool TryParseVersion(string? text, out Version version)
+    {
+        version = new Version();
+        return !string.IsNullOrWhiteSpace(text) && Version.TryParse(text.TrimStart('v'), out version);
+    }
+
     private async Task<HealthSnapshot> GetHealthAsync(LauncherConfig config)
     {
         try
@@ -709,6 +757,36 @@ internal sealed class ServiceManager
             Directory.CreateDirectory(Path.GetDirectoryName(target)!);
             File.Copy(file, target, overwrite: true);
         }
+    }
+
+    private sealed class ClientConfigResponse
+    {
+        [JsonPropertyName("update")]
+        public UpdateInfo? Update { get; set; }
+    }
+
+    private sealed class UpdateInfo
+    {
+        [JsonPropertyName("service")]
+        public string? Service { get; set; }
+
+        [JsonPropertyName("android")]
+        public PlatformUpdate? Android { get; set; }
+
+        [JsonPropertyName("windows")]
+        public PlatformUpdate? Windows { get; set; }
+    }
+
+    private sealed class PlatformUpdate
+    {
+        [JsonPropertyName("available")]
+        public bool Available { get; set; }
+
+        [JsonPropertyName("latestVersion")]
+        public string? LatestVersion { get; set; }
+
+        [JsonPropertyName("fileName")]
+        public string? FileName { get; set; }
     }
 
     private sealed class LauncherConfig

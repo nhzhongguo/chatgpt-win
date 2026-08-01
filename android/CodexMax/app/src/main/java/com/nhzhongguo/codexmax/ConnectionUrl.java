@@ -52,8 +52,20 @@ public final class ConnectionUrl {
         return uri.getScheme() + "://" + uri.getRawAuthority();
     }
 
+    public String token() {
+        return token;
+    }
+
     public String statusUrl() {
         return origin() + "/codex/status?token=" + encode(token);
+    }
+
+    public String configUrl() {
+        return origin() + "/codex/config?token=" + encode(token);
+    }
+
+    public String downloadUrl() {
+        return origin() + "/codex/download?file=android&token=" + encode(token);
     }
 
     public boolean hasSameOrigin(String otherUrl) {
