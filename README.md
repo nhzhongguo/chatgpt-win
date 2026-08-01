@@ -1,30 +1,35 @@
 # ChatGPT Win
 
-ChatGPT Win 是基于 [CoimgRain/Codex-Mini](https://github.com/CoimgRain/Codex-Mini) 原项目开发的 Windows 适配版。它保留原项目的 HTTP 服务、手机网页、token 鉴权、Codex session/history/status 解析和发送后追踪回复状态机制，重点补齐 Windows 上通过手机远程操控 ChatGPT / Codex Desktop 的能力。
+> 在手机上远程操控 Windows 上的 ChatGPT / Codex Desktop，全程局域网直连、本地运行。
 
-你可以在手机上打开一个本地网页，把文字或图片发送到 Windows 上正在使用的 Codex 对话中，并在网页里同步查看 Codex 的回复过程和结果。本仓库也保留 macOS 平台控制层，方便继续跟随原项目演进。
+ChatGPT Win 是一个开源的“手机 ↔ 电脑”远程控制桥接工具：手机通过网页或 Android App 连接同一局域网内的 Windows 电脑，把文字或图片发送到电脑上正在运行的 Codex 对话中，并实时同步查看回复过程、运行状态和工具调用结果。
 
-> 📌 **开源版 / 构建版说明**
->
-> 本仓库提供 ChatGPT Win 的开源维护版本，适合有服务器或开发能力的朋友自行部署、改造和二次开发。由于我个人精力有限，也希望通过开源让更多人一起参与改进。
->
-> 目前官方 DMG 构建版仅支持 **macOS**。源码版已加入 Windows MVP 适配，并提供与 macOS App 同职责的 Windows 客户端源码工程，可构建免安装便携包或 Windows 安装包；Windows 版本暂不包含服务器中转能力。
->
-> 如果你不想折腾部署，或者没有自己的服务器，可以直接下载我构建好的 **DMG 应用** 使用。DMG 构建版会持续维护，并优先提供最新功能；部分新功能可能不会第一时间同步到开源版，开源版会保持可用和维护，但节奏可能略滞后。感谢大家的支持，我也会在能力范围内持续把 ChatGPT Win 优化好。
+本项目基于 [CoimgRain/Codex-Mini](https://github.com/CoimgRain/Codex-Mini) 的本地桥接思路，重写了 Windows 自动化控制层，并新增 Android 原生客户端。它**不是云端聊天服务**：Codex 的登录状态、线程切换、输入和回复读取全部发生在你自己的电脑上。
 
-## 开源版与构建版
+---
 
-上面的提示是当前项目的版本定位：开源版方便自部署和二次开发，DMG 构建版适合直接安装使用并优先体验最新功能。
+## 主要功能
 
-## 当前状态
+**手机端**
+- 扫描电脑端二维码或手动粘贴带 token 的局域网地址，一键连接
+- 手机网页 / Android App 内查看任务列表、聊天记录、模型和推理等级
+- 发送文字、图片附件，支持停止响应、新建线程、归档、重命名、压缩上下文
+- 后台轮询任务状态，任务完成或失败时发送系统通知
+- Android App 支持最近连接保存与清除、中英文切换、新版本在线提示
 
-- 项目名：ChatGPT Win
-- 基线版本：基于上游 Codex Mini v3.0.5 源码适配
-- 主要目标：Windows 本地源码版 / 免安装客户端 / 手机局域网遥控 Windows 上的 Codex Desktop
-- 上游项目：[CoimgRain/Codex-Mini](https://github.com/CoimgRain/Codex-Mini)
-- 上游 macOS Release 参考：[codex-mini-beta-v3.0.5](https://github.com/CoimgRain/Codex-Mini/releases/tag/codex-mini-beta-v3.0.5)
+**电脑端（Windows）**
+- WPF 管理面板：服务状态、端口、线程数、二维码入口、日志与启停控制
+- 自动启动隐藏的 Node 本地服务，支持开机自启与健康检查
+- 优先通过 Chrome DevTools Protocol（CDP）无感控制 Codex；CDP 不可用时回退到 GUI / 剪贴板自动化
+- 内置 token 鉴权、API 限流、访问令牌轮换和附件大小限制
+- 可构建免安装便携版、单文件 exe 或 Inno Setup 安装包
 
-ChatGPT Win 目前优先交付 Windows 可运行 MVP。macOS 相关能力和上游脚本仍保留在仓库中，方便对照和后续同步，但本仓库的主要维护方向是 Windows 版。
+**安全与隐私**
+- 所有请求只在手机与电脑的局域网内传输，不经过任何第三方服务器
+- 连接链接自带随机 token，支持一键轮换，旧 token 立即失效
+- 不保存聊天正文或图片内容，Android App 禁止系统备份 token
+
+---
 
 ## 界面预览
 
@@ -38,199 +43,172 @@ ChatGPT Win 目前优先交付 Windows 可运行 MVP。macOS 相关能力和上�
   <img src="assets/screenshots/ipad-layout.png" alt="ChatGPT Win iPad 横屏布局" width="720" />
 </p>
 
-## 加入交流群
+---
 
-QQ 群：**760669553**
+## 快速开始
 
-欢迎加入群里交流使用问题、反馈 bug、提出功能建议。后续有最新版本也会在群里及时沟通。
+### 方式一：直接运行源码服务（最简单）
 
-## 安装与使用
+电脑上需要已安装并登录 Codex Desktop，且手机与电脑在同一个 Wi-Fi / 局域网。
 
-Windows 电脑端和 Android 手机端可以配套使用：
+```powershell
+node server.js
+```
 
-1. 克隆本仓库到 Windows 电脑。
-2. 确认 Codex Desktop 已安装、已登录，并能正常打开目标对话。
-3. 运行 `.\scripts\build-codex-max-windows-single-exe.ps1` 构建单文件客户端。
-4. 打开 `dist\windows\ChatGPT Win SingleExe\ChatGPT Win.exe`。
-5. 运行 `.\scripts\build-codex-max-android.ps1`，然后在 Android 手机上安装 `dist\android\ChatGPT-AZ-Android-v1.2.0.apk`。
-6. 打开手机 App，扫描电脑端显示的二维码；也可以手动粘贴带 token 的局域网入口。
-7. 手机和 Windows 电脑需要在同一个 Wi-Fi / 局域网。没有安装 Android App 时，仍可直接用手机浏览器打开该入口。
+终端会打印类似下面的局域网入口，用手机浏览器打开即可：
 
-> Android 构建脚本会在首次运行时在本机创建并保存 Release 私钥。该私钥和密码文件不会提交到 Git；后续升级必须继续使用同一份工作目录中的签名文件。
+```text
+http://192.168.x.x:8787/?token=...
+```
 
-macOS DMG 安装包请参考上游 [CoimgRain/Codex-Mini](https://github.com/CoimgRain/Codex-Mini)。
+> 也可以先设置自定义 token：`$env:MOBILE_TYPER_TOKEN = "your-token"`，再运行 `node server.js`。
+
+### 方式二：使用 Windows 客户端
+
+```powershell
+# 单文件免安装版
+.\scripts\build-codex-max-windows-single-exe.ps1
+
+# 便携版
+.\scripts\build-codex-max-windows-portable.ps1
+
+# 完整安装包（需要 Inno Setup 6）
+.\scripts\build-codex-max-windows-installer.ps1
+```
+
+构建产物分别输出到：
+
+```text
+dist\windows\ChatGPT Win SingleExe\ChatGPT Win.exe
+dist\windows\ChatGPT Win Portable\
+dist\windows\installer\ChatGPT-Win-Windows-Setup.exe
+```
+
+打开 `ChatGPT Win.exe` 后，管理面板会显示手机可访问的局域网二维码；手机扫码即可连接。
+
+### 方式三：安装 Android App
+
+```powershell
+.\scripts\build-codex-max-android.ps1
+```
+
+构建并签名后输出到 `dist\android\ChatGPT-AZ-Android-v1.2.7.apk`（含 `.sha256` 校验文件和传输用 ZIP）。把 APK 传到手机安装，或解压 ZIP 后在手机文件管理器中安装。
+
+> 构建脚本会在首次运行时生成并保存 Release 签名私钥（不会提交到 Git）。后续升级必须继续使用同一份工作目录中的签名文件，否则无法覆盖安装旧版本。
+
+---
 
 ## Android 原生客户端
 
-Android 工程位于 `android/CodexMax`，最低支持 Android 6.0（API 23）。它是现有手机网页的原生入口，不复制样本程序的实现，也不接入样本中的商业中转服务。
+Android 工程位于 `android/CodexMax`，最低支持 Android 6.0（API 23），构建环境需要 JDK 17 和 Android SDK 35。
 
-移动端 UI 的固定验收尺寸为 iPhone 15 Pro `393 × 852`。详细检查项见 [移动端验收基准](docs/MOBILE_QA.md)。
-
-- 扫描 Windows 管理端二维码或手动输入连接地址
-- 在 App 内加载 ChatGPT Win 手机控制界面并支持选择附件
-- 保存最近一次连接，长按“最近连接”可以清除
-- 限制 WebView 只在同源服务内导航，外部链接交给系统浏览器
+- 扫描电脑端二维码或手动输入连接地址
+- App 内加载完整手机控制界面，支持选择附件
+- 保存最近一次连接，长按“最近连接”可清除
 - 后台轮询 `/codex/status`，任务完成或失败时发送系统通知
-- 禁止系统备份连接 token
+- 连接后自动检查电脑端是否有新版 APK，支持一键下载更新
+- 限制 WebView 只在同源服务内导航，外部链接交给系统浏览器
 
-构建环境需要 JDK 17 和 Android SDK 35：
+移动端 UI 验收基准为 iPhone 15 Pro `393 × 852`，详见 [docs/MOBILE_QA.md](docs/MOBILE_QA.md)。
 
 ```powershell
 cd .\android\CodexMax
 .\gradlew.bat testDebugUnitTest lintDebug assembleDebug
 ```
 
-从仓库根目录运行 `.\scripts\build-codex-max-android.ps1` 可生成经过正式签名和校验的 `dist\android\ChatGPT-AZ-Android-v1.2.0.apk`、`.sha256` 校验文件和传输用 ZIP 包。若聊天软件或手机管家拦截 APK，请传输 ZIP 后在手机文件管理器中解压，再安装其中的 APK；`dist` 属于本机构建产物，不提交到 Git。
+---
 
-## 添加到主屏幕
+## 工作原理
 
-iPhone 上打开 ChatGPT Win 网页后，按下面三步操作：
+1. 电脑端启动本地 Node 服务，生成带随机 token 的局域网入口
+2. 手机网页 / App 通过该入口连接电脑
+3. 本地服务读取 Codex Desktop 的会话、历史和运行状态，并把文字/图片写入当前对话
+4. 本地服务持续读取 Codex 回复日志，把结果同步回手机
+5. 同一 Wi-Fi 下手机直连电脑局域网地址，速度最快
 
-1. 点浏览器底部或菜单里的“分享”
-2. 如果没看到“添加到主屏幕”，先点“查看更多”
-3. 点“添加到主屏幕”，之后从桌面图标打开 ChatGPT Win
+Windows 控制层优先使用 CDP：如果 Codex 以 `--remote-debugging-port` 启动，可以在后台直接控制渲染页面，无需把窗口拉到前台。CDP 不可用或需要发送图片时，会回退到 `codex://` 深链 + UI Automation / 剪贴板路径。
 
-> Windows 推荐先用 CDP 调试端口启动 ChatGPT / Codex Desktop。CDP 可用时，ChatGPT Win 会直接控制应用的渲染页面，无需把应用窗口拉到前台；CDP 不可用或发送图片附件时，会回退到原来的 GUI/剪贴板自动化路径。
-
-## Windows 源码版 MVP
-
-Windows 版复用原有 HTTP 服务、手机网页、token 鉴权、Codex session/history/status 解析和发送后追踪回复状态的机制，只替换桌面自动化层。当前 Windows 控制层优先连接 Codex Desktop 暴露的 Chrome DevTools Protocol（CDP）页面 target，直接在 `app://-/index.html` 渲染层中新建项目线程、聚焦 ProseMirror 输入框、插入文本、点击发送按钮、停止按钮，并通过顶部智能菜单切换推理等级。只有在 CDP 不可用、需要发送图片附件，或执行模型/线程菜单类操作时，才回退到旧的 `codex://` 深链 + UI Automation / 剪贴板 / SendKeys 路径。
-
-开启 Codex Desktop CDP 的调试脚本：
+开启 Codex Desktop 的 CDP 调试模式：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\start-codex-cdp.ps1 -ForceRestart
 ```
 
-脚本会用 `--remote-debugging-port=9222` 重启 Codex，并检查 `http://127.0.0.1:9222/json/list` 是否暴露了 `title: Codex`、`url: app://-/index.html` 的 `page` target。本地服务默认连接 `127.0.0.1:9222`；如需换端口，可同时设置：
+CDP 端口默认 `9222`，可用 `-Port 9333` 修改，并设置 `$env:CODEX_MAX_CDP_PORT` 与之一致。
 
-```powershell
-$env:CODEX_MAX_CDP_PORT = "9333"
-powershell -ExecutionPolicy Bypass -File .\scripts\start-codex-cdp.ps1 -ForceRestart -Port 9333
-```
+---
 
-Windows 客户端工程位于 `windows/CodexMini`，职责对齐 macOS App。当前 Windows 客户端使用 WPF 实现，界面结构复刻 macOS SwiftUI 控制面板：顶部状态、HTTP/端口/线程指标、常用操作、本机入口和日志/启停入口。
+## Windows 当前限制
 
-客户端面板右侧会显示当前局域网入口二维码，手机扫码即可打开带 token 的控制页。操作区的“受控 ChatGPT”按钮会调用本地服务重启官方 ChatGPT / Codex Desktop，并自动附加 `--remote-debugging-port` 参数；手机页在处于 `GUI` 回退模式时也会显示一个小的 CDP 启动按钮。
+- 纯文本发送、新建项目线程、停止响应和推理模式切换优先走 CDP，可在后台完成
+- 图片附件、模型切换、归档、置顶、重命名等操作暂时回退到 GUI / 剪贴板路径
+- 手机端顶部显示 `CDP` 表示无感控制，显示 `GUI` 表示前台自动化回退模式
+- 不支持锁屏后操作、UAC 弹窗或管理员认证处理
+- GUI 回退和图片附件会临时使用 Windows 剪贴板，发送期间请勿手动修改剪贴板
+- keep-awake 使用 `SetThreadExecutionState`，服务退出后自动停止保持亮屏
 
-- 生成并持久化手机访问 token
-- 准备本地服务 payload
-- 启动、停止、重启隐藏的 Node 本地服务
-- 展示 HTTP 状态、端口、线程数量、最新线程标题和日志入口
-- 打开网页、复制局域网入口
+---
 
-构建免安装便携版：
-
-```powershell
-.\scripts\build-codex-max-windows-portable.ps1
-```
-
-构建单文件免安装 exe：
-
-```powershell
-.\scripts\build-codex-max-windows-single-exe.ps1
-```
-
-默认输出：
+## 项目结构
 
 ```text
-dist\windows\ChatGPT Win SingleExe\ChatGPT Win.exe
+server.js                        本地 HTTP 服务（路由、鉴权、限流、状态同步）
+public/                          手机端单页 Web 界面（中英文、多主题、工作台）
+src/                             平台控制层（win32 / darwin）与应用服务封装
+android/CodexMax/                Android 原生客户端（WebView + 扫码 + 通知）
+windows/CodexMini/               Windows WPF 管理面板与安装包配置
+macos/CodexMini/                 macOS 工程（跟随上游保留）
+scripts/                         构建脚本（Windows / Android / CDP 启动）
+docs/                            文档（构建说明、移动端验收基准）
+test/                            服务端测试
+.github/workflows/               GitHub Actions CI
 ```
 
-单文件版会把 .NET Desktop Runtime、本地服务 payload 和 Node 一起嵌入 exe。为了兼容旧版配置，运行状态仍保存在 `%APPDATA%\Codex Max`。
+更详细的构建环境与命令见 [docs/BUILDING.md](docs/BUILDING.md)，版本变更见 [CHANGELOG.md](CHANGELOG.md)。
 
-默认输出：
+---
 
-```text
-dist\windows\ChatGPT Win Portable
-dist\windows\ChatGPT-Win-Windows-Portable.zip
-```
-
-解压后直接运行 `ChatGPT Win.exe`。便携版默认自带 .NET Desktop Runtime、Node、本地服务 payload 和 Windows 控制层，不需要先安装 Node 或 .NET。
-
-构建客户端目录：
+## 开发与测试
 
 ```powershell
-.\scripts\build-codex-max-windows.ps1
+# 语法检查
+npm run check
+
+# 服务端测试
+node --test test/server.test.js test/codex-app-server.test.js
 ```
 
-也可以直接指定输出目录或内置 Node：
+提交到 `main` 或发起 PR 时，GitHub Actions 会自动运行服务端检查与测试、Android 单元测试 / lint / 构建，并上传 Debug APK 产物。
 
-```powershell
-.\scripts\build-codex-max-windows.ps1 -OutputDir .\dist\windows\CodexMini -NodePath "C:\Program Files\nodejs\node.exe"
-```
+---
 
-构建后打开输出目录里的 `ChatGPT Win.exe`。客户端会自动启动本机服务，并在界面里显示手机可访问的局域网入口。
+## 常见问题
 
-构建完整 Windows 安装包：
+**手机打不开网页？**
+确认手机和电脑在同一个 Wi-Fi；检查 Windows 防火墙是否允许 `8787` 端口入站；重新扫码获取最新入口。
 
-```powershell
-.\scripts\build-codex-max-windows-installer.ps1
-```
+**提示 token 无效？**
+电脑端服务重启或 token 已轮换后，需要重新扫码。轮换 token 后，旧的局域网链接会立即失效。
 
-安装器默认内置 .NET Desktop Runtime，目标电脑无需再安装 .NET。只有开发调试时才使用 `-FrameworkDependent` 构建依赖系统运行时的精简包。安装器使用 Inno Setup 6 编译，输出到 `dist\windows\installer\ChatGPT-Win-Windows-Setup.exe`。安装后会创建开始菜单入口，可选创建桌面快捷方式，并在安装完成后启动 `ChatGPT Win.exe`。
+**手机上无法上下滑动设置页？**
+该问题已在最新版本修复；请更新电脑端服务文件并重启客户端，重新扫码连接。
 
-开发调试时也可以直接运行服务：
+**这是收费软件吗？**
+不是。本项目是纯本地开源工具，不包含任何云端中转、会员或付费功能。
 
-```powershell
-npm install
-$env:MOBILE_TYPER_TOKEN = "your-token"
-node server.js
-```
+---
 
-然后把终端里打印的局域网地址复制到手机浏览器打开。手机和 Windows 电脑需要在同一个 Wi-Fi / 局域网；Codex Desktop 需要已安装、已登录，并且能在当前 Windows 桌面会话里通过 `codex://` 拉起。
+## 交流与反馈
 
-Windows 当前限制：
+QQ 群：**760669553**
 
-- 纯文本发送、新建项目线程、停止响应和推理模式切换优先走 CDP，可在 Codex 窗口后台完成。
-- 图片附件、模型切换、归档、置顶、重命名等操作暂时仍会回退到 GUI/剪贴板路径。
-- 如果 Codex 不是用 `--remote-debugging-port` 启动，手机端顶部会显示 `GUI`，表示当前处于前台自动化回退模式；显示 `CDP` 时才是无感控制。
-- 不支持锁屏后操作、UAC 弹窗处理或管理员认证处理；这些系统级界面不在 CDP 渲染层内。
-- `/send` 串行进入控制队列。CDP 纯文本发送不使用系统剪贴板；GUI 回退和图片附件仍会临时写入 Windows 剪贴板，发送期间请避免手动改剪贴板。
-- Windows 自动化层会启动一个隐藏的常驻 helper，避免每个 GUI 动作都重新启动 PowerShell；keep-awake 仍使用独立保持亮屏进程。
-- keep-awake 使用 Windows `SetThreadExecutionState`，服务退出或关闭 keep-awake 后会停止保持亮屏。
+欢迎反馈使用问题、bug 和功能建议。也可以在 GitHub Issues 中提交。
 
-<p>
-  <img src="assets/install/add-to-home-step-2.jpg" alt="第 1 步：点击分享" width="220" />
-  <img src="assets/install/add-to-home-step-3.jpg" alt="第 2 步：点击查看更多" width="220" />
-  <img src="assets/install/add-to-home-step-1.jpg" alt="第 3 步：添加到主屏幕" width="220" />
-</p>
+---
 
-## 当前版本实现原理
+## 致谢
 
-本项目最初基于手机到 Mac 上 Codex Desktop 的轻量桥接流程，后续扩展为 Windows 版 ChatGPT Win：
+- 上游项目：[CoimgRain/Codex-Mini](https://github.com/CoimgRain/Codex-Mini)
+- 上游 macOS Release 参考：[codex-mini-beta-v3.0.5](https://github.com/CoimgRain/Codex-Mini/releases/tag/codex-mini-beta-v3.0.5)
 
-1. Mac 上运行一个本地服务，默认由上游 `Codex Mini.app` 管理
-2. 手机网页把文字或图片发送到这台 Mac
-3. 本地服务读取 Codex Desktop 的会话状态，并通过 macOS 自动化把内容粘贴到当前 Codex 线程里
-4. 本地服务继续读取 Codex 会话日志，把可见回复、运行状态、工具调用过程等同步回手机网页
-5. 在同一个 Wi‑Fi 下，手机优先直连局域网入口，速度更快
-6. 开启 Pro 后，手机也可以走服务器中转入口；当你在外面、不在同一个局域网时，仍然可以连接自己的 Mac 并远程操控 Codex
-
-也就是说，ChatGPT Win 本身不是云端聊天服务。服务器中转只负责把手机请求转回你自己的电脑，真正的 ChatGPT / Codex 登录状态、线程切换、输入和回复读取仍然发生在你的电脑上。
-
-## 本地免费与 Pro 会员
-
-- 本地局域网功能永久免费：手机和 Mac 在同一个 Wi‑Fi / 局域网下即可使用
-- Pro 会员解锁外网入口：通过服务器中转连接自己的 Mac，不在同一个 Wi‑Fi 下也可以使用
-- 当前支持 7 天免费试用、月度、季度和年度计划
-- Pro 激活后请重新复制新的外网入口到手机上；旧的局域网入口只适合同一网络下使用
-
-## 服务器中转与隐私
-
-- 服务器中转只做连接转发，不代替你的 Codex 账号，也不保存聊天正文或图片内容
-- 请不要把自己的访问链接、令牌或电脑隐私信息发给陌生人
-- 为了保持服务稳定，图片大小、图片频率和套餐流量会有合理限制
-
-## 注意事项
-
-- 请确保 Mac 上已经安装并登录 Codex Desktop
-- 请保持 Codex Desktop 可正常使用
-- 请不要把自己的访问链接、令牌或电脑隐私信息发给陌生人
-- 当前是 Beta 版本，可能存在兼容性问题，欢迎进群反馈
-
-## 源码说明
-
-本仓库提供 ChatGPT Win 的开源维护版本，适合希望自行部署、接入自己的服务器或进行二次开发的用户。
-
-如果你更希望开箱即用，或者想优先体验最新功能，建议直接下载 Releases 中的 DMG 构建版。构建版会持续维护，部分新功能可能会先在构建版中发布，再逐步同步到开源版本。
+macOS 相关工程保留在仓库中，方便对照与同步；本仓库的主要维护方向是 Windows + Android。
