@@ -6824,6 +6824,10 @@
           appendSettingsSection('服务诊断', [
             { title: '服务健康', detail: health.host ? `已连接 ${health.host}` : '正在读取本机服务状态', meta: health.ok === false ? '异常' : '在线' },
             { title: '当前控制模式', detail: routeControlDetail(), meta: activeControlMode === 'cdp' ? 'CDP' : '本地桥接' },
+            { title: '运行时长', detail: health.uptime ? `已运行 ${Math.floor(health.uptime / 60)}m ${health.uptime % 60}s` : '—', meta: health.version || '' },
+            { title: '内存占用', detail: health.memory ? `RSS ${(health.memory.rss / 1024 / 1024).toFixed(1)}MB · 堆 ${(health.memory.heapUsed / 1024 / 1024).toFixed(1)}/${(health.memory.heapTotal / 1024 / 1024).toFixed(1)}MB` : '—', meta: health.nodeVersion ? `Node ${health.nodeVersion}` : '' },
+            { title: '定时任务', detail: health.scheduledTasks !== undefined ? `${health.scheduledTasks} 个计划 · ${health.activeScheduledTasks || 0} 个启用` : '—', meta: health.scheduledTasks > 0 ? '运行中' : '空闲' },
+            { title: 'CDP 状态', detail: health.cdp ? (health.cdp.available ? `端口 ${health.cdp.port || 9222}` : (health.cdp.message || '未连接')) : '—', meta: health.cdp?.available ? '可用' : '离线' },
           ], content);
         },
         personalization: () => appendSettingsSection('个性化', [

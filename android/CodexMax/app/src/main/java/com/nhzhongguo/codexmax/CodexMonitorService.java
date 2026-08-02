@@ -29,7 +29,7 @@ public final class CodexMonitorService extends Service {
     private NotificationHelper notifications;
     private volatile ConnectionUrl connection;
 
-    static void start(Context context, String connectionUrl) {
+    public static void start(Context context, String connectionUrl) {
         Intent intent = new Intent(context, CodexMonitorService.class)
                 .setAction(ACTION_START)
                 .putExtra(EXTRA_URL, connectionUrl);
@@ -40,7 +40,7 @@ public final class CodexMonitorService extends Service {
         }
     }
 
-    static void stop(Context context) {
+    public static void stop(Context context) {
         Intent intent = new Intent(context, CodexMonitorService.class).setAction(ACTION_STOP);
         try {
             context.startService(intent);

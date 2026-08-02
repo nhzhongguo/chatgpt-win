@@ -1999,7 +1999,7 @@ function countCodexHistoryMessages(lines, maxNeeded = MAX_HISTORY_MESSAGES) {
       }
     } else if (item.type === 'event_msg' && payload.type === 'task_complete') {
       const lastMessage = normalizeHistoryText(payload.last_agent_message || '');
-      if (currentTurn && !currentTurn.hasAssistant) count += lastMessage ? 1 : 1;
+      if (currentTurn && !currentTurn.hasAssistant) count += lastMessage ? 1 : 0;
       currentTurn = null;
     } else if (item.type === 'event_msg' && isTerminalFailurePayload(payload)) {
       if (currentTurn && !currentTurn.hasAssistant) count += 1;

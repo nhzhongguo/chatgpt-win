@@ -1,0 +1,275 @@
+package com.nhzhongguo.codexmax.ui.state
+
+import android.app.Application
+import android.content.pm.PackageManager
+import android.os.Build
+import android.util.Log
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import com.nhzhongguo.codexmax.BuildConfig
+import com.nhzhongguo.codexmax.ConnectionStore
+import com.nhzhongguo.codexmax.ConnectionUrl
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.json.JSONObject
+import java.io.BufferedReader
+import java.io.InputStreamReader
+import java.net.HttpURLConnection
+import java.net.URL
+import java.nio.charset.StandardCharsets
+
+data class UpdateInfo(
+    val latestVersion: String,
+    val downloadUrl: String,
+)
+
+data class ConnectionState(
+    val addressInput: String = "",
+    val recentUrl: String = "",
+    val hasRecent: Boolean = false,
+    val statusMessage: String = "",
+    val statusIsError: Boolean = false,
+    val showStatus: Boolean = false,
+    val activeConnection: ConnectionUrl? = null,
+    val screen: Screen = Screen.Connection,
+    val pageProgress: Int = 0,
+    val pageProgressVisible: Boolean = false,
+    val updateInfo: UpdateInfo? = null,
+    val promptedUpdateVersion: String? = null,
+    val snackbarMessage: String? = null,
+)
+
+enum class Screen {
+    Connection,
+    Browser,
+}
+
+class ConnectionStateViewModel(
+    application: Application,
+) : AndroidViewModel(application) {
+
+    private val store = ConnectionStore(application)
+    private val _state = MutableStateFlow(loadInitialState())
+    val state: StateFlow<ConnectionState> = _state.asStateFlow()
+
+    private fun loadInitialState(): ConnectionState {
+        val recent = store.load()
+        val parsed = ConnectionUrl.parse(recent)
+        return ConnectionState(
+            addressInput = if (parsed.isValid()) recent else "",
+            recentUrl = recent,
+            hasRecent = parsed.isValid(),
+        )
+    }
+
+    fun updateAddressInput(value: String) {
+        _state.update { it.copy(addressInput = value) }
+    }
+
+    fun clearStatus() {
+        _state.update { it.copy(showStatus = false, statusMessage = "", statusIsError = false) }
+    }
+
+    fun showStatus(message: String, isError: Boolean) {
+        _state.update {
+            it.copy(
+                showStatus = message.isNotBlank(),
+                statusMessage = message,
+                statusIsError = isError,
+            )
+        }
+    }
+
+    fun showSnackbar(message: String) {
+        _state.update { it.copy(snackbarMessage = message) }
+    }
+
+    fun clearSnackbar() {
+        _state.update { it.copy(snackbarMessage = null) }
+    }
+
+    fun clearRecent() {
+        store.clear()
+        _state.update {
+            it.copy(
+                addressInput = "",
+                recentUrl = "",
+                hasRecent = false,
+            )
+        }
+        showStatus("已清除上次连接", isError = false)
+    }
+
+    fun connect(rawUrl: String): Boolean {
+        val result = ConnectionUrl.parse(rawUrl)
+        if (!result.isValid()) {
+            showStatus(result.error(), isError = true)
+            return false
+        }
+        val connection = result.value()
+        store.save(connection.normalizedUrl())
+        _state.update {
+            it.copy(
+                addressInput = connection.normalizedUrl(),
+                recentUrl = connection.normalizedUrl(),
+                hasRecent = true,
+                activeConnection = connection,
+                screen = Screen.Browser,
+                pageProgressVisible = true,
+                pageProgress = 0,
+                showStatus = false,
+                statusMessage = "",
+            )
+        }
+        return true
+    }
+
+    fun connectRecent() {
+        val recent = store.load()
+        if (recent.isNotBlank()) connect(recent)
+    }
+
+    fun disconnect() {
+        _state.update {
+            it.copy(
+                activeConnection = null,
+                screen = Screen.Connection,
+                pageProgress = 0,
+                pageProgressVisible = false,
+            )
+        }
+    }
+
+    fun updateProgress(progress: Int) {
+        _state.update {
+            it.copy(
+                pageProgress = progress,
+                pageProgressVisible = progress < 100,
+            )
+        }
+    }
+
+    fun onPageLoaded() {
+        _state.update {
+            it.copy(
+                pageProgress = 100,
+                pageProgressVisible = false,
+            )
+        }
+        val connection = _state.value.activeConnection ?: return
+        checkForUpdate(connection)
+    }
+
+    fun onConnectionFailed(message: String) {
+        _state.update {
+            it.copy(
+                activeConnection = null,
+                screen = Screen.Connection,
+                pageProgress = 0,
+                pageProgressVisible = false,
+                showStatus = true,
+                statusMessage = message,
+                statusIsError = true,
+            )
+        }
+    }
+
+    fun hasCamera(): Boolean {
+        return getApplication<Application>().packageManager
+            .hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY)
+    }
+
+    fun shouldRequestNotificationPermission(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return false
+        return getApplication<Application>().checkSelfPermission(
+            android.Manifest.permission.POST_NOTIFICATIONS
+        ) != PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun checkForUpdate(connection: ConnectionUrl) {
+        val currentPrompted = _state.value.promptedUpdateVersion
+        viewModelScope.launch {
+            try {
+                val update = withContext(Dispatchers.IO) {
+                    fetchUpdateInfo(connection)
+                }
+                if (update != null) {
+                    val latest = update.latestVersion
+                    if (latest.isNotEmpty() &&
+                        latest != currentPrompted &&
+                        compareVersions(latest, BuildConfig.VERSION_NAME) > 0
+                    ) {
+                        _state.update {
+                            it.copy(
+                                updateInfo = update,
+                                promptedUpdateVersion = latest,
+                            )
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.d(TAG, "Update check failed: ${e.message}")
+            }
+        }
+    }
+
+    private fun fetchUpdateInfo(connection: ConnectionUrl): UpdateInfo? {
+        var http: HttpURLConnection? = null
+        try {
+            val url = URL(connection.configUrl())
+            http = url.openConnection() as HttpURLConnection
+            http.connectTimeout = 4000
+            http.readTimeout = 4000
+            http.setRequestProperty("x-mobile-typer-token", connection.token())
+            if (http.responseCode != 200) return null
+            val body = readStream(http.inputStream)
+            val root = JSONObject(body)
+            val update = root.optJSONObject("update") ?: return null
+            val androidUpdate = update.optJSONObject("android") ?: return null
+            if (!androidUpdate.optBoolean("available")) return null
+            val latest = androidUpdate.optString("latestVersion")
+            if (latest.isEmpty()) return null
+            return UpdateInfo(latest, connection.downloadUrl())
+        } finally {
+            http?.disconnect()
+        }
+    }
+
+    companion object {
+        private const val TAG = "ConnectionState"
+
+        fun compareVersions(left: String, right: String): Int {
+            val leftParts = left.split(".")
+            val rightParts = right.split(".")
+            val length = maxOf(leftParts.size, rightParts.size)
+            for (i in 0 until length) {
+                val leftValue = if (i < leftParts.size) parseVersionPart(leftParts[i]) else 0
+                val rightValue = if (i < rightParts.size) parseVersionPart(rightParts[i]) else 0
+                if (leftValue != rightValue) return leftValue.compareTo(rightValue)
+            }
+            return 0
+        }
+
+        private fun parseVersionPart(part: String): Int {
+            return try {
+                part.trim().toInt()
+            } catch (e: NumberFormatException) {
+                0
+            }
+        }
+
+        private fun readStream(input: java.io.InputStream): String {
+            val builder = StringBuilder()
+            BufferedReader(InputStreamReader(input, StandardCharsets.UTF_8)).use { reader ->
+                var line: String?
+                while (reader.readLine().also { line = it } != null) builder.append(line)
+            }
+            return builder.toString()
+        }
+    }
+}

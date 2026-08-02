@@ -1,7 +1,8 @@
 {
   "scripts": {
     "start": "node server.js",
-    "check": "node --check server.js"
+    "check": "node --check server.js && node --check src/store/index.js && node --check src/security/index.js && node --check src/security/certs.js && node --check src/logger/index.js && node --check src/scheduler/index.js && node --check src/codex/session-parser.js && node --check src/routes/index.js",
+    "start:https": "CODEX_MAX_HTTPS=1 node server.js"
   },
   "dependencies": {},
   "devDependencies": {},
@@ -9,6 +10,6 @@
     "node": ">=18"
   },
   "name": "chatgpt-win",
-  "version": "3.1.1",
+  "version": "3.2.0",
   "description": "Local phone-to-ChatGPT desktop bridge for Windows"
 }

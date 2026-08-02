@@ -1,5 +1,18 @@
 # Changelog
 
+# 3.2.0 (2026-08-02)
+
+- Feat: 模块化架构拆分 - server.js 拆分为独立模块（store/security/logger/scheduler/codex-parser/routes）
+- Feat: 结构化日志系统 - JSON 格式输出、日志级别、HTTP 请求日志
+- Feat: HTTPS 支持 - 自签名证书自动生成（CODEX_MAX_HTTPS=1 启用）
+- Feat: 增强健康检查 - 内存使用、运行时长、定时任务数、Node 版本、CDP 状态
+- Feat: 安全模块集成 - Token 轮换、限流、鉴权统一管理
+- Feat: 定时任务引擎模块化 - Scheduler 独立模块，支持 CRUD 和执行状态跟踪
+- Feat: 前端监控面板 - 服务诊断页显示运行时长、内存占用、定时任务、CDP 状态
+- Feat: GitHub Actions Release 工作流 - tag 推送自动构建 APK 并创建 Release
+- Feat: npm run check 检查所有模块语法
+- Chore: 版本升级至 v3.2.0
+
 # 3.1.2 (2026-08-01)
 
 - Feat: Android in-app update check (prompts when server has a newer APK)

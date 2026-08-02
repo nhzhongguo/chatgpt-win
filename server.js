@@ -11,9 +11,23 @@ const { spawn } = require('child_process');
 const { URL } = require('url');
 const { CodexAppServer } = require('./src/codex-app-server');
 
+// ===== 模块化组件 =====
+const { Store } = require('./src/store');
+const { PersistentQueue } = require('./src/store/queue');
+const { Security } = require('./src/security');
+const { CertificateManager } = require('./src/security/certs');
+const { Logger, defaultLogger } = require('./src/logger');
+const { Scheduler, normalizeScheduledTask, normalizeScheduledTasks, createScheduledTaskRecord, nextScheduledRunAt, SCHEDULED_TASK_LIMIT, RETRY_STRATEGIES } = require('./src/scheduler');
+const { CronParser } = require('./src/scheduler/cron');
+const { CodexSessionParser } = require('./src/codex/session-parser');
+const { CdpWebSocketHub } = require('./src/cdp/ws-hub');
+const { Router, getClientIp } = require('./src/routes');
+// json 和 readBody 使用 server.js 本地定义（包含 CORS 头和超时处理）
+
 const APP_NAME = process.env.CODEX_MAX_APP_NAME || process.env.CODEX_MINI_APP_NAME || 'ChatGPT Win';
 const PORT = Number(process.env.PORT || 8787);
 const HOST = process.env.HOST || '0.0.0.0';
+const USE_HTTPS = process.env.CODEX_MAX_HTTPS === '1' || process.env.CODEX_MINI_HTTPS === '1';
 
 function loadPersistedToken() {
   try {
@@ -47,9 +61,7 @@ function syncLauncherToken(token) {
 }
 
 function rotateAccessToken() {
-  TOKEN = crypto.randomBytes(12).toString('base64url');
-  persistToken(TOKEN);
-  syncLauncherToken(TOKEN);
+  TOKEN = security.rotateToken();
   return TOKEN;
 }
 const PUBLIC_DIR = path.join(__dirname, 'public');
@@ -72,6 +84,16 @@ const SERVICE_VERSION = (() => {
 let TOKEN = loadPersistedToken() || process.env.MOBILE_TYPER_TOKEN || crypto.randomBytes(12).toString('base64url');
 const codexAppServer = new CodexAppServer({ cwd: __dirname });
 
+// ===== 模块化初始化 =====
+const store = new Store({ stateDir: STATE_DIR, stateFile: STATE_FILE, tokenFile: TOKEN_FILE });
+const security = new Security({ initialToken: TOKEN, appName: APP_NAME, store });
+const logger = defaultLogger;
+const parser = new CodexSessionParser({ store });
+const scheduler = new Scheduler({ store, codexAppServer, logger });
+const certManager = new CertificateManager();
+const persistentQueue = new PersistentQueue({ logger });
+const cdpWsHub = new CdpWebSocketHub({ security, logger });
+
 const CODEX_SESSIONS_DIR = path.join(os.homedir(), '.codex', 'sessions');
 const CODEX_SESSION_INDEX = path.join(os.homedir(), '.codex', 'session_index.jsonl');
 const CODEX_DESKTOP_LOGS_DIR = process.platform === 'darwin'
@@ -87,10 +109,7 @@ const CODEX_HISTORY_TAIL_BYTES = 128 * 1024 * 1024;
 const CODEX_TITLE_SCAN_BYTES = 12 * 1024 * 1024;
 const MAX_HISTORY_MESSAGES = 120;
 const GUI_FAILURE_REPORT_LIMIT = 80;
-const SCHEDULED_TASK_LIMIT = 64;
-const SCHEDULED_TASK_MIN_INTERVAL_MINUTES = 5;
-const SCHEDULED_TASK_MAX_INTERVAL_MINUTES = 7 * 24 * 60;
-const SCHEDULED_TASK_POLL_MS = 30000;
+// SCHEDULED_TASK 常量已迁移到 src/scheduler 模块
 const GITHUB_REQUEST_TIMEOUT_MS = 10000;
 const GITHUB_RESPONSE_MAX_BYTES = 2 * 1024 * 1024;
 const ENVIRONMENT_MAX_FILES = 80;
@@ -138,25 +157,10 @@ const rateLimitBuckets = new Map();
 const RATE_LIMIT_CLEANUP_INTERVAL = 60000;
 
 function rateLimitCheck(ip) {
-  const now = Date.now();
-  let bucket = rateLimitBuckets.get(ip);
-  if (!bucket || now - bucket.resetAt >= 60000) {
-    bucket = { tokens: RATE_LIMIT_BURST, resetAt: now + 60000 };
-    rateLimitBuckets.set(ip, bucket);
-  }
-  if (bucket.tokens > 0) {
-    bucket.tokens -= 1;
-    return true;
-  }
-  return false;
+  return security.rateLimitCheck(ip);
 }
 
-setInterval(() => {
-  const cutoff = Date.now();
-  for (const [ip, bucket] of rateLimitBuckets) {
-    if (cutoff - bucket.resetAt >= 120000) rateLimitBuckets.delete(ip);
-  }
-}, RATE_LIMIT_CLEANUP_INTERVAL);
+// 注：rate limiter 清理已由 Security 模块内部管理
 // -----------------------------------------------------
 let codexSessionFilesCache = { at: 0, files: [] };
 let threadIndexCache = { mtimeMs: 0, size: 0, byId: null };
@@ -369,56 +373,7 @@ function normalizeIsoTimestamp(value) {
   return Number.isFinite(ms) ? new Date(ms).toISOString() : '';
 }
 
-function normalizeScheduleInterval(value) {
-  const minutes = Math.round(Number(value));
-  if (!Number.isFinite(minutes)) return 60;
-  return Math.max(SCHEDULED_TASK_MIN_INTERVAL_MINUTES, Math.min(SCHEDULED_TASK_MAX_INTERVAL_MINUTES, minutes));
-}
-
-function normalizeScheduledTask(row = {}) {
-  if (!row || typeof row !== 'object') return null;
-  const id = String(row.id || '').trim();
-  const prompt = String(row.prompt || '').trim();
-  if (!/^[a-zA-Z0-9_-]{8,80}$/.test(id) || !prompt) return null;
-  const runMode = row.runMode === 'thread' ? 'thread' : 'standalone';
-  const threadId = isCodexThreadId(row.threadId) ? String(row.threadId) : '';
-  if (runMode === 'thread' && !threadId) return null;
-  const intervalMinutes = normalizeScheduleInterval(row.intervalMinutes);
-  const now = new Date();
-  return {
-    id,
-    prompt: prompt.slice(0, MAX_TEXT_LENGTH),
-    cwd: String(row.cwd || '').trim().slice(0, 2000),
-    threadId: runMode === 'thread' ? threadId : '',
-    runMode,
-    intervalMinutes,
-    enabled: row.enabled !== false,
-    createdAt: normalizeIsoTimestamp(row.createdAt) || now.toISOString(),
-    updatedAt: normalizeIsoTimestamp(row.updatedAt) || now.toISOString(),
-    nextRunAt: normalizeIsoTimestamp(row.nextRunAt) || new Date(now.getTime() + intervalMinutes * 60000).toISOString(),
-    lastRunAt: normalizeIsoTimestamp(row.lastRunAt),
-    lastStatus: ['idle', 'running', 'started', 'skipped', 'error'].includes(row.lastStatus) ? row.lastStatus : 'idle',
-    lastMessage: truncateText(row.lastMessage || '', 500),
-    lastThreadId: isCodexThreadId(row.lastThreadId) ? String(row.lastThreadId) : '',
-  };
-}
-
-function normalizeScheduledTasks(value) {
-  const seen = new Set();
-  const rows = Array.isArray(value) ? value : [];
-  return rows
-    .map(normalizeScheduledTask)
-    .filter(item => item && !seen.has(item.id) && seen.add(item.id))
-    .slice(0, SCHEDULED_TASK_LIMIT)
-    .sort((a, b) => Date.parse(a.nextRunAt) - Date.parse(b.nextRunAt));
-}
-
-function nextScheduledRunAt(task, nowMs = Date.now()) {
-  const intervalMs = normalizeScheduleInterval(task.intervalMinutes) * 60000;
-  const previous = Date.parse(task.nextRunAt || '');
-  const base = Number.isFinite(previous) ? previous : nowMs;
-  return new Date(Math.max(nowMs + intervalMs, base + intervalMs)).toISOString();
-}
+// normalizeScheduledTask, normalizeScheduledTasks, nextScheduledRunAt 已迁移到 src/scheduler 模块
 
 function setThreadSetMembership(list, threadId, enabled) {
   const set = new Set((Array.isArray(list) ? list : []).filter(isCodexThreadId));
@@ -2071,7 +2026,7 @@ function countCodexHistoryMessages(lines, maxNeeded = MAX_HISTORY_MESSAGES) {
       }
     } else if (item.type === 'event_msg' && payload.type === 'task_complete') {
       const lastMessage = normalizeHistoryText(payload.last_agent_message || '');
-      if (currentTurn && !currentTurn.hasAssistant) count += lastMessage ? 1 : 1;
+      if (currentTurn && !currentTurn.hasAssistant) count += lastMessage ? 1 : 0;
       currentTurn = null;
     } else if (item.type === 'event_msg' && isTerminalFailurePayload(payload)) {
       if (currentTurn && !currentTurn.hasAssistant) count += 1;
@@ -3146,11 +3101,7 @@ function readBody(req) {
 }
 
 function isAuthorized(req) {
-  const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
-  const fromHeader = req.headers['x-mobile-typer-token'];
-  const fromQuery = url.searchParams.get('token');
-  const fromCookie = parseCookies(req.headers.cookie || '').codexMiniToken;
-  return fromHeader === TOKEN || fromQuery === TOKEN || fromCookie === TOKEN;
+  return security.isAuthorized(req);
 }
 
 function parseCookies(header) {
@@ -3433,151 +3384,19 @@ async function handleNewCodexThread(req, res) {
   }
 }
 
-function createScheduledTaskRecord(payload = {}, previous = null) {
-  const prompt = String(payload.prompt || previous?.prompt || '').trim();
-  if (!prompt) {
-    const error = new Error('计划内容不能为空。');
-    error.status = 400;
-    error.code = 'EMPTY_SCHEDULE_PROMPT';
-    throw error;
-  }
-  if (prompt.length > MAX_TEXT_LENGTH) {
-    const error = new Error(`计划内容不能超过 ${MAX_TEXT_LENGTH} 个字符。`);
-    error.status = 400;
-    error.code = 'SCHEDULE_PROMPT_TOO_LONG';
-    throw error;
-  }
-  const runMode = payload.runMode === 'thread' ? 'thread' : 'standalone';
-  const threadId = runMode === 'thread' ? String(payload.threadId || previous?.threadId || '').trim() : '';
-  if (runMode === 'thread' && !isCodexThreadId(threadId)) {
-    const error = new Error('要延续当前任务，请先选择一个有效的 Codex 任务。');
-    error.status = 400;
-    error.code = 'SCHEDULE_THREAD_REQUIRED';
-    throw error;
-  }
-  const requestedCwd = payload.cwd === undefined ? previous?.cwd || '' : payload.cwd;
-  const cwd = requestedCwd ? validLocalDirectory(String(requestedCwd)) : '';
-  if (requestedCwd && !cwd) {
-    const error = new Error('计划项目目录不存在或不可用。');
-    error.status = 400;
-    error.code = 'SCHEDULE_PROJECT_UNAVAILABLE';
-    throw error;
-  }
-  const intervalMinutes = normalizeScheduleInterval(payload.intervalMinutes === undefined ? previous?.intervalMinutes : payload.intervalMinutes);
-  const now = new Date().toISOString();
-  return normalizeScheduledTask({
-    id: previous?.id || crypto.randomUUID(),
-    prompt,
-    cwd,
-    threadId,
-    runMode,
-    intervalMinutes,
-    enabled: payload.enabled === undefined ? previous?.enabled !== false : payload.enabled === true,
-    createdAt: previous?.createdAt || now,
-    updatedAt: now,
-    nextRunAt: previous && payload.intervalMinutes === undefined ? previous.nextRunAt : new Date(Date.now() + intervalMinutes * 60000).toISOString(),
-    lastRunAt: previous?.lastRunAt || '',
-    lastStatus: previous?.lastStatus || 'idle',
-    lastMessage: previous?.lastMessage || '',
-    lastThreadId: previous?.lastThreadId || '',
-  });
-}
+// createScheduledTaskRecord 已迁移到 src/scheduler 模块
 
-function scheduledTaskSummary(state = readCodexMiniState()) {
-  return normalizeScheduledTasks(state.scheduledTasks);
-}
-
-function updateScheduledTaskState(taskId, updater) {
-  const state = readCodexMiniState();
-  const index = state.scheduledTasks.findIndex(task => task.id === taskId);
-  if (index === -1) return null;
-  const next = updater({ ...state.scheduledTasks[index] });
-  if (!next) return null;
-  state.scheduledTasks[index] = normalizeScheduledTask(next);
-  writeCodexMiniState(state);
-  return state.scheduledTasks[index];
-}
-
-async function runScheduledTask(taskId, options = {}) {
-  const id = String(taskId || '').trim();
-  if (!id || scheduledTaskRuns.has(id)) return null;
-  scheduledTaskRuns.add(id);
-  try {
-    const state = readCodexMiniState();
-    const task = state.scheduledTasks.find(item => item.id === id);
-    if (!task || !task.enabled) return null;
-    const now = Date.now();
-    if (!options.force && Date.parse(task.nextRunAt) > now) return null;
-
-    if (task.runMode === 'thread') {
-      const runtime = codexAppServer.runtimeForThread(task.threadId);
-      const loadedThread = runtime?.status === 'running' ? null : await codexAppServer.readThread(task.threadId, false);
-      if (runtime?.status === 'running' || loadedThread?.status?.type === 'active') {
-        return updateScheduledTaskState(id, current => ({
-          ...current,
-          updatedAt: new Date().toISOString(),
-          nextRunAt: nextScheduledRunAt(current),
-          lastStatus: 'skipped',
-          lastMessage: '当前任务仍在运行，已跳过本次计划。',
-        }));
-      }
-    }
-
-    updateScheduledTaskState(id, current => ({
-      ...current,
-      updatedAt: new Date().toISOString(),
-      lastStatus: 'running',
-      lastMessage: '',
-    }));
-
-    const result = await codexAppServer.sendTurn({
-      threadId: task.runMode === 'thread' ? task.threadId : '',
-      cwd: task.cwd,
-      text: task.prompt,
-      clientUserMessageId: `schedule-${task.id}-${Date.now()}`,
-    });
-    return updateScheduledTaskState(id, current => ({
-      ...current,
-      updatedAt: new Date().toISOString(),
-      nextRunAt: nextScheduledRunAt(current),
-      lastRunAt: new Date().toISOString(),
-      lastStatus: 'started',
-      lastMessage: '已提交给本机 Codex。',
-      lastThreadId: result.threadId || current.lastThreadId || '',
-    }));
-  } catch (error) {
-    return updateScheduledTaskState(id, current => ({
-      ...current,
-      updatedAt: new Date().toISOString(),
-      nextRunAt: nextScheduledRunAt(current),
-      lastRunAt: new Date().toISOString(),
-      lastStatus: 'error',
-      lastMessage: truncateText(error?.message || String(error), 500),
-    }));
-  } finally {
-    scheduledTaskRuns.delete(id);
-  }
-}
-
-async function runDueScheduledTasks() {
-  const now = Date.now();
-  const due = scheduledTaskSummary().filter(task => task.enabled && Date.parse(task.nextRunAt) <= now);
-  for (const task of due) await runScheduledTask(task.id);
+// ===== 调度器已迁移到 Scheduler 模块 =====
+function scheduledTaskSummary() {
+  return scheduler.getTasks();
 }
 
 function startScheduledTaskRunner() {
-  if (scheduledTaskTimer) return;
-  scheduledTaskTimer = setInterval(() => {
-    runDueScheduledTasks().catch(error => console.warn('Scheduled task runner failed:', error.message || error));
-  }, SCHEDULED_TASK_POLL_MS);
-  scheduledTaskTimer.unref?.();
-  runDueScheduledTasks().catch(error => console.warn('Scheduled task runner failed:', error.message || error));
+  scheduler.start();
 }
 
 function stopScheduledTaskRunner() {
-  if (!scheduledTaskTimer) return;
-  clearInterval(scheduledTaskTimer);
-  scheduledTaskTimer = null;
+  scheduler.stop();
 }
 
 async function handleSchedules(req, res) {
@@ -3585,7 +3404,7 @@ async function handleSchedules(req, res) {
   const workspace = await listWorkspaceThreads(160);
   const projects = existingProjectCwds(workspace.threads).map(cwd => ({ cwd, name: displayPathName(cwd) }));
   if (req.method === 'GET') {
-    return json(res, 200, { ok: true, schedules: scheduledTaskSummary(), projects });
+    return json(res, 200, { ok: true, schedules: scheduler.getTasks(), projects });
   }
 
   let payload = {};
@@ -3598,45 +3417,26 @@ async function handleSchedules(req, res) {
   const action = String(payload.action || '').trim();
   const id = String(payload.id || '').trim();
   try {
-    const state = readCodexMiniState();
     if (action === 'create') {
-      const task = createScheduledTaskRecord(payload);
-      state.scheduledTasks = [...state.scheduledTasks, task];
-      if (state.scheduledTasks.length > SCHEDULED_TASK_LIMIT) {
-        return json(res, 400, { ok: false, code: 'SCHEDULE_LIMIT_REACHED', message: `最多可保留 ${SCHEDULED_TASK_LIMIT} 个计划。` });
-      }
-      writeCodexMiniState(state);
-      return json(res, 200, { ok: true, schedule: task, schedules: scheduledTaskSummary(), projects, message: '已创建计划。' });
-    }
-    const index = state.scheduledTasks.findIndex(task => task.id === id);
-    if (index === -1) {
-      return json(res, 404, { ok: false, code: 'SCHEDULE_NOT_FOUND', message: '这个计划不存在或已被删除。' });
+      const task = scheduler.createTask(payload);
+      return json(res, 200, { ok: true, schedule: task, schedules: scheduler.getTasks(), projects, message: '已创建计划。' });
     }
     if (action === 'update') {
-      const task = createScheduledTaskRecord(payload, state.scheduledTasks[index]);
-      state.scheduledTasks[index] = task;
-      writeCodexMiniState(state);
-      return json(res, 200, { ok: true, schedule: task, schedules: scheduledTaskSummary(), projects, message: '已更新计划。' });
+      const task = scheduler.updateTask(id, payload);
+      return json(res, 200, { ok: true, schedule: task, schedules: scheduler.getTasks(), projects, message: '已更新计划。' });
     }
     if (action === 'toggle') {
       const enabled = payload.enabled === true;
-      state.scheduledTasks[index] = normalizeScheduledTask({
-        ...state.scheduledTasks[index],
-        enabled,
-        updatedAt: new Date().toISOString(),
-        nextRunAt: enabled ? new Date(Date.now() + state.scheduledTasks[index].intervalMinutes * 60000).toISOString() : state.scheduledTasks[index].nextRunAt,
-      });
-      writeCodexMiniState(state);
-      return json(res, 200, { ok: true, schedule: state.scheduledTasks[index], schedules: scheduledTaskSummary(), projects, message: enabled ? '已启用计划。' : '已暂停计划。' });
+      const task = scheduler.toggleTask(id, enabled);
+      return json(res, 200, { ok: true, schedule: task, schedules: scheduler.getTasks(), projects, message: enabled ? '已启用计划。' : '已暂停计划。' });
     }
     if (action === 'delete') {
-      state.scheduledTasks.splice(index, 1);
-      writeCodexMiniState(state);
-      return json(res, 200, { ok: true, schedules: scheduledTaskSummary(), projects, message: '已删除计划。' });
+      scheduler.deleteTask(id);
+      return json(res, 200, { ok: true, schedules: scheduler.getTasks(), projects, message: '已删除计划。' });
     }
     if (action === 'run') {
-      await runScheduledTask(id, { force: true });
-      return json(res, 200, { ok: true, schedules: scheduledTaskSummary(), projects, message: '已提交本次计划。' });
+      await scheduler.runTask(id, { force: true });
+      return json(res, 200, { ok: true, schedules: scheduler.getTasks(), projects, message: '已提交本次计划。' });
     }
     return json(res, 400, { ok: false, code: 'BAD_SCHEDULE_ACTION', message: '不支持的计划操作。' });
   } catch (error) {
@@ -4580,7 +4380,8 @@ async function handleClientConfig(req, res) {
 }
 
 async function handleHealth(req, res) {
-  if (!isAuthorized(req)) return json(res, 401, { ok: false, code: 'UNAUTHORIZED', message: '访问令牌不正确。' });
+  // 健康检查不需要鉴权（用于监控），但返回信息有限
+  const authorized = isAuthorized(req);
   let cdp = null;
   if (platform.cdpStatus) {
     try {
@@ -4593,15 +4394,29 @@ async function handleHealth(req, res) {
       };
     }
   }
-  return json(res, 200, {
+  const mem = process.memoryUsage();
+  const base = {
     ok: true,
-    service: 'codex-max',
+    service: APP_NAME,
+    version: SERVICE_VERSION,
     host: os.hostname(),
     platform: platform.name,
+    now: new Date().toISOString(),
+    uptime: Math.floor(process.uptime()),
+  };
+  if (!authorized) {
+    // 未鉴权请求只返回基础信息
+    return json(res, 200, base);
+  }
+  return json(res, 200, {
+    ...base,
     controlMode: codexAppServer.isAvailable() ? 'app-server' : cdp && cdp.available ? 'cdp' : 'gui',
     appServer: codexAppServer.status(),
     cdp,
-    now: new Date().toISOString(),
+    memory: { rss: mem.rss, heapUsed: mem.heapUsed, heapTotal: mem.heapTotal, external: mem.external },
+    nodeVersion: process.versions.node,
+    scheduledTasks: scheduler.getTasks().length,
+    activeScheduledTasks: scheduler.getTasks().filter(t => t.enabled).length,
   });
 }
 
@@ -4757,7 +4572,9 @@ function handleHistoryAttachment(req, res) {
   }
 }
 
-const server = http.createServer((req, res) => {
+// ===== HTTP/HTTPS 服务器创建 =====
+const requestHandler = (req, res) => {
+  const startTime = Date.now();
   if (req.method === 'OPTIONS') return options(res);
   // Rate limiting - skip for health check
   if (!req.url.startsWith('/codex/health')) {
@@ -4794,31 +4611,69 @@ const server = http.createServer((req, res) => {
   if (req.method === 'POST' && req.url.startsWith('/codex/stop')) return handleStopCodex(req, res);
   if (req.method === 'GET' || req.method === 'HEAD') return serveStatic(req, res);
   json(res, 405, { ok: false, code: 'METHOD_NOT_ALLOWED', message: 'Method not allowed' });
+};
+
+// HTTPS 证书管理
+let server;
+if (USE_HTTPS) {
+  const certResult = certManager.ensureCert();
+  if (certResult.ok) {
+    server = https.createServer(certManager.loadCredentials(), requestHandler);
+    logger.info('https_enabled', { fingerprint: certResult.fingerprint });
+  } else {
+    logger.warn('https_fallback', { reason: certResult.error });
+    server = http.createServer(requestHandler);
+  }
+} else {
+  server = http.createServer(requestHandler);
+}
+
+// CDP WebSocket 升级处理 - 实时状态推送
+server.on('upgrade', (req, socket, head) => {
+  const { pathname } = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+  if (pathname === '/codex/ws') {
+    cdpWsHub.handleUpgrade(req, socket, head);
+  } else {
+    socket.destroy();
+  }
 });
 
 server.listen(PORT, HOST, () => {
   startScheduledTaskRunner();
+  cdpWsHub.start();
   const urls = getLanUrls();
-  console.log('\nChatGPT Win is running.');
+  const protocol = USE_HTTPS && certManager.hasValidCert() ? 'https' : 'http';
+  logger.info('server_started', { port: PORT, host: HOST, protocol, version: SERVICE_VERSION, ws: true });
+  console.log(`\n${APP_NAME} is running.`);
   console.log('Keep this terminal open, make sure Codex Desktop is available, then open one of these URLs on your phone:');
   for (const url of urls) console.log(`  ${url}`);
+  if (USE_HTTPS) console.log('\nNote: Using HTTPS with self-signed certificate. You may need to accept the certificate warning on your phone.');
   console.log('\nTip: phone and this computer must be on the same Wi‑Fi/LAN. Press Ctrl+C to stop.\n');
 });
 
 process.on('exit', () => {
   stopScheduledTaskRunner();
+  cdpWsHub.stop();
+  persistentQueue.close();
   cleanupKeepAwake();
+  security.destroy();
   codexAppServer.close();
 });
 process.on('SIGINT', () => {
   stopScheduledTaskRunner();
+  cdpWsHub.stop();
+  persistentQueue.close();
   cleanupKeepAwake();
+  security.destroy();
   codexAppServer.close();
   process.exit(130);
 });
 process.on('SIGTERM', () => {
   stopScheduledTaskRunner();
+  cdpWsHub.stop();
+  persistentQueue.close();
   cleanupKeepAwake();
+  security.destroy();
   codexAppServer.close();
   process.exit(143);
 });

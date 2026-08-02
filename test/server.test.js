@@ -42,9 +42,11 @@ test('All required route handlers are defined', () => {
 });
 
 test('Rate limit cleanup prevents memory leak', () => {
+  const security = require('fs').readFileSync('./src/security/index.js', 'utf8');
+  assert.ok(security.includes('RATE_LIMIT_CLEANUP_INTERVAL'), 'Cleanup interval defined');
+  assert.ok(security.includes('rateLimitBuckets.delete'), 'Stale bucket cleanup');
   const src = require('fs').readFileSync('./server.js', 'utf8');
-  assert.ok(src.includes('RATE_LIMIT_CLEANUP_INTERVAL'), 'Cleanup interval defined');
-  assert.ok(src.includes('rateLimitBuckets.delete'), 'Stale bucket cleanup');
+  assert.ok(src.includes('RATE_LIMIT_CLEANUP_INTERVAL'), 'Server references cleanup interval');
 });
 
 test('Platform module handles win32 and darwin', () => {
