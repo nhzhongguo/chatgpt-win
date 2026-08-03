@@ -13,6 +13,7 @@ val Primary = Color(0xFF47D7AC)
 val Secondary = Color(0xFF70A7FF)
 val Tertiary = Color(0xFFFFB36A)
 val Danger = Color(0xFFFF7D87)
+val Success = Color(0xFF34A853)
 
 val TextPrimary = Color(0xFFF3F6F8)
 val TextSecondary = Color(0xFFAAB5C0)

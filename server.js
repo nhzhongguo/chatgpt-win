@@ -170,6 +170,7 @@ let scheduledTaskTimer = null;
 const scheduledTaskRuns = new Set();
 const pullRequestCache = new Map();
 const historyAttachmentCache = new Map();
+const historyAttachmentIdByPath = new Map(); // filePath -> id 反向索引（O(1) 查找，替代每次 O(n) 全表扫描）
 
 function fileCacheSignature(stat) {
   return stat ? `${stat.size}:${stat.mtimeMs}` : '';
@@ -2086,13 +2087,23 @@ function historyAttachmentDescriptor(filePath) {
     if (!stat.isFile() || stat.isSymbolicLink() || stat.size <= 0 || stat.size > MAX_ATTACHMENT_BYTES) return null;
   } catch { return null; }
   const now = Date.now();
-  for (const [id, item] of historyAttachmentCache) {
-    if (item.expiresAt <= now) historyAttachmentCache.delete(id);
-    else if (item.filePath === absolutePath) return { name: path.basename(absolutePath), url: `/codex/attachment?id=${encodeURIComponent(id)}` };
+  const existingId = historyAttachmentIdByPath.get(absolutePath);
+  if (existingId) {
+    const item = historyAttachmentCache.get(existingId);
+    if (item && item.expiresAt > now && item.filePath === absolutePath) {
+      return { name: path.basename(absolutePath), url: `/codex/attachment?id=${encodeURIComponent(existingId)}` };
+    }
+    historyAttachmentIdByPath.delete(absolutePath);
   }
-  while (historyAttachmentCache.size >= HISTORY_ATTACHMENT_LIMIT) historyAttachmentCache.delete(historyAttachmentCache.keys().next().value);
+  while (historyAttachmentCache.size >= HISTORY_ATTACHMENT_LIMIT) {
+    const oldestId = historyAttachmentCache.keys().next().value;
+    const oldest = historyAttachmentCache.get(oldestId);
+    historyAttachmentCache.delete(oldestId);
+    if (oldest) historyAttachmentIdByPath.delete(oldest.filePath);
+  }
   const id = crypto.randomBytes(18).toString('base64url');
   historyAttachmentCache.set(id, { filePath: absolutePath, mime, expiresAt: now + HISTORY_ATTACHMENT_TTL_MS });
+  historyAttachmentIdByPath.set(absolutePath, id);
   return { name: path.basename(absolutePath), url: `/codex/attachment?id=${encodeURIComponent(id)}` };
 }
 
@@ -4262,6 +4273,9 @@ async function handleSend(req, res) {
 const staticFileCache = new Map();
 const STATIC_CACHE_MAX_ITEMS = 200;
 const STATIC_CACHE_MAX_BYTES = 256 * 1024;
+// 缓存命中后跳过磁盘 stat 的 TTL（毫秒）：静态资源几乎不会在 1 秒内变更，
+// 到期后仍会做 mtime/size 校验，保证文件更新可感知
+const STATIC_CACHE_STAT_TTL_MS = 1000;
 
 function serveStatic(req, res) {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
@@ -4277,13 +4291,26 @@ function serveStatic(req, res) {
 
   const ext = path.extname(filePath);
   const cacheKey = filePath;
+  const now = Date.now();
+
+  // 命中内存缓存且 TTL 内：跳过磁盘 stat，直接复用（热点静态资源零磁盘 I/O）
+  const cached = staticFileCache.get(cacheKey);
+  if (cached && now - cached.checkedAt < STATIC_CACHE_STAT_TTL_MS) {
+    staticFileCache.delete(cacheKey); // LRU：移到末尾
+    staticFileCache.set(cacheKey, cached);
+    const headers = staticHeaders(ext, url, cached.size, cached.data.length);
+    res.writeHead(200, headers);
+    res.end(req.method === 'HEAD' ? undefined : cached.data);
+    return;
+  }
+
   let stat = null;
   try { stat = fs.statSync(filePath); } catch {}
 
   // 命中缓存（mtime 与 size 未变则直接复用内存数据）
   if (stat && stat.isFile() && stat.size <= STATIC_CACHE_MAX_BYTES) {
-    const cached = staticFileCache.get(cacheKey);
     if (cached && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size) {
+      cached.checkedAt = now;
       staticFileCache.delete(cacheKey); // LRU：移到末尾
       staticFileCache.set(cacheKey, cached);
       const headers = staticHeaders(ext, url, stat.size, cached.data.length);
@@ -4295,6 +4322,7 @@ function serveStatic(req, res) {
 
   fs.readFile(filePath, (error, data) => {
     if (error) {
+      if (cached) staticFileCache.delete(cacheKey);
       res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8', 'x-content-type-options': 'nosniff' });
       return res.end('Not found');
     }
@@ -4303,7 +4331,7 @@ function serveStatic(req, res) {
       if (staticFileCache.size >= STATIC_CACHE_MAX_ITEMS) {
         staticFileCache.delete(staticFileCache.keys().next().value);
       }
-      staticFileCache.set(cacheKey, { data, mtimeMs: stat.mtimeMs, size: stat.size });
+      staticFileCache.set(cacheKey, { data, mtimeMs: stat.mtimeMs, size: stat.size, checkedAt: now });
     }
     const headers = staticHeaders(ext, url, data.length, data.length);
     res.writeHead(200, headers);
@@ -4605,6 +4633,7 @@ function handleHistoryAttachment(req, res) {
   const item = historyAttachmentCache.get(id);
   if (!item || item.expiresAt <= Date.now()) {
     historyAttachmentCache.delete(id);
+    if (item) historyAttachmentIdByPath.delete(item.filePath);
     return json(res, 404, { ok: false, code: 'ATTACHMENT_NOT_FOUND', message: '图片预览已失效，请刷新任务记录。' });
   }
   try {
@@ -4614,6 +4643,7 @@ function handleHistoryAttachment(req, res) {
     fs.createReadStream(item.filePath).on('error', () => res.destroy()).pipe(res);
   } catch {
     historyAttachmentCache.delete(id);
+    historyAttachmentIdByPath.delete(item.filePath);
     return json(res, 404, { ok: false, code: 'ATTACHMENT_NOT_FOUND', message: '图片文件不可用。' });
   }
 }

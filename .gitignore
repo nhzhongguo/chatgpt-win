@@ -30,3 +30,6 @@ android/**/signing/
 # 编译产物（源码见 scripts/codex-window-point.swift，构建时生成）
 bin/codex-window-point
 macos/CodexMini/CodexMini/Resources/CodexMiniProject/bin/
+
+# macOS 构建脚本生成的内嵌服务副本（scripts/build-codex-mini-app.sh 构建时 rsync 刷新，勿手动提交）
+macos/CodexMini/CodexMini/Resources/CodexMiniProject/

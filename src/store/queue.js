@@ -29,6 +29,7 @@ class PersistentQueue {
 
     this._queue = [];
     this._logs = [];
+    this._nextId = 1; // JSON 回退模式下自增 ID 游标（避免每次 enqueue 全量扫描取最大值）
     this._useSqlite = false;
 
     if (Database) {
@@ -92,6 +93,10 @@ class PersistentQueue {
       this._queue = JSON.parse(fs.readFileSync(this.queueFile, 'utf8'));
       if (!Array.isArray(this._queue)) this._queue = [];
     } catch { this._queue = []; }
+    for (const entry of this._queue) {
+      const id = Number(entry?.id);
+      if (Number.isFinite(id) && id >= this._nextId) this._nextId = id + 1;
+    }
     // 加载日志
     try {
       this._logs = JSON.parse(fs.readFileSync(this.logFile, 'utf8'));
@@ -121,10 +126,13 @@ class PersistentQueue {
       return { id: result.lastInsertRowid, ...item };
     }
 
-    const id = this._queue.length > 0 ? Math.max(...this._queue.map(q => q.id || 0)) + 1 : 1;
+    const id = this._nextId++;
     const entry = { id, ...item };
     this._queue.push(entry);
-    if (this._queue.length > MAX_QUEUE_SIZE) this._queue = this._queue.slice(-MAX_QUEUE_SIZE);
+    if (this._queue.length > MAX_QUEUE_SIZE) {
+      this._queue = this._queue.slice(-MAX_QUEUE_SIZE);
+      // 游标无需回退：ID 只要求单调递增、不要求紧凑
+    }
     this._persistJson();
     return entry;
   }

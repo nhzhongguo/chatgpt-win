@@ -42,7 +42,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -62,6 +61,7 @@ import com.nhzhongguo.codexmax.ui.theme.Background
 import com.nhzhongguo.codexmax.ui.theme.Divider
 import com.nhzhongguo.codexmax.ui.theme.Primary
 import com.nhzhongguo.codexmax.ui.theme.Secondary
+import com.nhzhongguo.codexmax.ui.theme.Success
 import com.nhzhongguo.codexmax.ui.theme.SurfaceAlt
 import com.nhzhongguo.codexmax.ui.theme.SurfaceDeep
 import com.nhzhongguo.codexmax.ui.theme.TextTertiary
@@ -464,7 +464,7 @@ private fun HealthCard(online: Boolean?, version: String) {
             modifier = Modifier.fillMaxWidth(),
         ) {
             val (dotColor, labelRes) = when (online) {
-                true -> Color(0xFF34A853) to R.string.service_status_online
+                true -> Success to R.string.service_status_online
                 false -> MaterialTheme.colorScheme.error to R.string.service_status_offline
                 null -> TextTertiary to R.string.service_status_unknown
             }

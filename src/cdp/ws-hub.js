@@ -56,6 +56,9 @@ function decodeWsFrameClient(buffer) {
   return { text: payload.toString('utf8'), consumed: frameEnd };
 }
 
+// 慢客户端背压阈值：写入缓冲超过该值时断开，防止内存无限增长（状态推送可容忍丢失，客户端会重连）
+const MAX_BACKPRESSURE_BYTES = 512 * 1024;
+
 class CdpWebSocketHub {
   constructor(options = {}) {
     this.security = options.security;
@@ -63,6 +66,7 @@ class CdpWebSocketHub {
     this.clients = new Set(); // Set<net.Socket>
     this.cdpConnection = null;
     this.lastStatus = null;
+    this._lastStatusText = null;
     this._statusPollTimer = null;
     this._statusPollInterval = options.statusPollInterval || 5000;
   }
@@ -96,9 +100,10 @@ class CdpWebSocketHub {
     if (!this.cdpConnection) return;
     const probe = await this.cdpConnection.probe();
     const status = { ...probe, polledAt: new Date().toISOString() };
-    // 只在状态变化时广播
-    const changed = JSON.stringify(status) !== JSON.stringify(this.lastStatus);
-    if (changed) {
+    // 只在状态变化时广播（单次 stringify 比较，避免重复序列化）
+    const statusText = JSON.stringify(status);
+    if (statusText !== this._lastStatusText) {
+      this._lastStatusText = statusText;
       this.lastStatus = status;
       this.broadcast({ type: 'cdp_status', data: status });
     }
@@ -185,6 +190,11 @@ class CdpWebSocketHub {
 
   _sendToClient(socket, message) {
     if (socket.destroyed || !socket.writable) return;
+    if (socket.writableLength > MAX_BACKPRESSURE_BYTES) {
+      try { socket.end(); } catch {}
+      this.clients.delete(socket);
+      return;
+    }
     try {
       socket.write(encodeWsFrameServer(JSON.stringify(message)));
     } catch (error) {
@@ -196,6 +206,12 @@ class CdpWebSocketHub {
     const frame = encodeWsFrameServer(JSON.stringify(message));
     for (const socket of this.clients) {
       if (socket.destroyed || !socket.writable) {
+        this.clients.delete(socket);
+        continue;
+      }
+      // 慢客户端背压保护：写入缓冲过大时断开，防止内存无限增长
+      if (socket.writableLength > MAX_BACKPRESSURE_BYTES) {
+        try { socket.end(); } catch {}
         this.clients.delete(socket);
         continue;
       }

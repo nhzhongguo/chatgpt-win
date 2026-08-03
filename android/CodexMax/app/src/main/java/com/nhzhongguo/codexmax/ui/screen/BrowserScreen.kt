@@ -102,7 +102,7 @@ fun BrowserScreen(
                         ViewGroup.LayoutParams.MATCH_PARENT,
                         ViewGroup.LayoutParams.MATCH_PARENT,
                     )
-                    setBackgroundColor(0xFF101419.toInt())
+                    setBackgroundColor(Background.toArgb())
 
                     settings.apply {
                         javaScriptEnabled = true
