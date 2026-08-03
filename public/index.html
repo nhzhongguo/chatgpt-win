@@ -275,6 +275,134 @@
     .model-badge:active:not(:disabled) {
       transform: scale(.96);
     }
+    .prompt-badge {
+      flex: 0 0 auto;
+      height: var(--top-control-size);
+      appearance: none;
+      border: 1px solid rgba(255,255,255,.10);
+      border-radius: 999px;
+      background: rgba(255,255,255,.055);
+      color: var(--accent-blue-soft);
+      padding: 0 10px;
+      font: inherit;
+      font-size: 12px;
+      font-weight: 820;
+      line-height: 1;
+      display: inline-grid;
+      place-items: center;
+      cursor: pointer;
+      touch-action: manipulation;
+      white-space: nowrap;
+    }
+    .prompt-badge:active { transform: scale(.96); }
+    .prompt-library-panel {
+      position: fixed;
+      left: 12px;
+      right: 12px;
+      bottom: calc(var(--effective-safe-area-bottom) + var(--composer-height, 132px) + 8px);
+      z-index: 90;
+      max-height: 52vh;
+      display: flex;
+      flex-direction: column;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: var(--panel-2);
+      box-shadow: 0 18px 48px rgba(0,0,0,.42);
+      overflow: hidden;
+    }
+    .prompt-library-panel[hidden] { display: none; }
+    .prompt-library-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 14px 6px;
+      font-size: 13px;
+      font-weight: 820;
+      color: var(--text);
+    }
+    .prompt-library-close {
+      appearance: none;
+      border: 0;
+      background: transparent;
+      color: var(--muted);
+      font-size: 20px;
+      line-height: 1;
+      padding: 0 4px;
+      cursor: pointer;
+    }
+    .prompt-library-list {
+      overflow-y: auto;
+      padding: 2px 10px 8px;
+      max-height: 24vh;
+    }
+    .prompt-library-empty {
+      padding: 10px 6px;
+      color: var(--faint);
+      font-size: 12px;
+    }
+    .prompt-library-item {
+      appearance: none;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      width: 100%;
+      margin: 4px 0;
+      padding: 9px 12px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: transparent;
+      color: var(--text);
+      font: inherit;
+      font-size: 13px;
+      text-align: left;
+      cursor: pointer;
+    }
+    .prompt-library-item-title {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .prompt-library-item-delete {
+      flex: 0 0 auto;
+      color: #ff8a8a;
+      font-size: 12px;
+      padding: 4px 6px;
+      border-radius: 8px;
+    }
+    .prompt-library-form {
+      display: grid;
+      gap: 8px;
+      padding: 8px 12px 12px;
+      border-top: 1px solid var(--line);
+    }
+    .prompt-library-title, .prompt-library-text {
+      width: 100%;
+      box-sizing: border-box;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: var(--composer-bg);
+      color: var(--text);
+      font: inherit;
+      font-size: 13px;
+      padding: 8px 10px;
+    }
+    .prompt-library-actions {
+      display: flex;
+      justify-content: flex-end;
+    }
+    .prompt-library-save {
+      appearance: none;
+      border: 0;
+      border-radius: 999px;
+      background: var(--accent);
+      color: #111;
+      font: inherit;
+      font-size: 13px;
+      font-weight: 820;
+      padding: 8px 18px;
+      cursor: pointer;
+    }
     .model-menu-card {
       position: fixed;
       z-index: 120;
@@ -1142,6 +1270,22 @@
       font-feature-settings: "tnum" 1;
     }
     .message.user .meta { text-align: right; }
+    .speak-btn {
+      appearance: none;
+      border: 0;
+      margin: 4px 0 0 auto;
+      display: grid;
+      place-items: center;
+      width: 28px;
+      height: 28px;
+      border-radius: 999px;
+      background: transparent;
+      color: var(--faint);
+      cursor: pointer;
+      touch-action: manipulation;
+    }
+    .speak-btn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+    .speak-btn.is-speaking { color: #ff5d5d; background: rgba(255, 93, 93, .14); }
     .bubble {
       color: var(--text);
       font-size: 15px;
@@ -1482,7 +1626,7 @@
       position: relative;
       z-index: 2;
       display: grid;
-      grid-template-columns: auto minmax(0, 1fr) auto;
+      grid-template-columns: auto auto minmax(0, 1fr) auto auto;
       align-items: end;
       gap: 5px;
       padding: 9px;
@@ -1584,6 +1728,7 @@
       touch-action: manipulation;
     }
     .icon-btn:active, .send-btn:active { transform: scale(.96); }
+    .icon-btn.is-recording { color: #ff5d5d; background: rgba(255, 93, 93, .14); }
     .composer-action-hidden { display: none; }
     .stop-btn:disabled { opacity: .45; cursor: wait; }
     .stop-square {
@@ -3181,6 +3326,7 @@
           <button class="thread-action-button" id="thread-action-rename" type="button"><span class="action-icon" id="thread-action-rename-icon" aria-hidden="true"></span><span data-i18n="rename">重命名</span></button>
           <button class="thread-action-button is-blue" id="thread-action-pin-toggle" type="button"><span class="action-icon" id="thread-action-pin-toggle-icon" aria-hidden="true"></span><span id="thread-action-pin-toggle-text">置顶</span></button>
           <button class="thread-action-button" id="thread-action-compact" type="button"><span class="action-icon" id="thread-action-compact-icon" aria-hidden="true"></span><span data-i18n="compactContext">压缩上下文</span></button>
+          <button class="thread-action-button" id="thread-action-export" type="button"><span class="action-icon" id="thread-action-export-icon" aria-hidden="true"></span><span data-i18n="exportThread">导出对话</span></button>
           <button class="thread-action-button" id="thread-action-review" type="button" hidden><span class="action-icon" id="thread-action-review-icon" aria-hidden="true"></span><span>审查当前改动</span></button>
         </div>
         <div class="thread-rename-panel">
@@ -3290,10 +3436,26 @@
       <div class="composer-modes" data-i18n-aria="modelAndReasoning" aria-label="模型与推理等级">
         <button class="model-badge is-unknown" id="model-badge" type="button" title="选择模型" aria-label="选择模型"><span id="model-text">--</span></button>
         <button class="reasoning-badge is-unknown" id="reasoning-badge" type="button" title="选择推理等级" aria-label="选择推理等级"><span id="reasoning-text">--</span></button>
+        <button class="prompt-badge" id="prompt-badge" type="button" title="提示词库" aria-label="提示词库" data-i18n-title="promptLibrary"><span data-i18n="promptLibrary">提示词库</span></button>
+      </div>
+      <div class="prompt-library-panel" id="prompt-library-panel" role="dialog" aria-modal="false" aria-label="提示词库" hidden>
+        <div class="prompt-library-head">
+          <span data-i18n="promptLibrary">提示词库</span>
+          <button class="prompt-library-close" id="prompt-library-close" type="button" title="关闭" aria-label="关闭">×</button>
+        </div>
+        <div class="prompt-library-list" id="prompt-library-list"></div>
+        <form class="prompt-library-form" id="prompt-library-form">
+          <input class="prompt-library-title" id="prompt-library-title" type="text" autocomplete="off" enterkeyhint="done" maxlength="60" placeholder="提示词标题（可选）" data-i18n-placeholder="promptTitlePlaceholder" />
+          <textarea class="prompt-library-text" id="prompt-library-text" rows="3" maxlength="4000" placeholder="提示词内容，点选后填入输入框" data-i18n-placeholder="promptTextPlaceholder"></textarea>
+          <div class="prompt-library-actions">
+            <button class="prompt-library-save" id="prompt-library-save" type="submit" data-i18n="promptSave">保存</button>
+          </div>
+        </form>
       </div>
       <div class="slash-command-menu" id="slash-command-menu" role="listbox" aria-label="斜杠菜单"></div>
       <form class="composer" id="composer">
         <button class="icon-btn" id="attach" type="button" title="添加照片或附件" aria-label="添加照片或附件"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
+        <button class="icon-btn" id="voice-input" type="button" title="语音输入" aria-label="语音输入"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15a3.4 3.4 0 0 0 3.4-3.4V6.4A3.4 3.4 0 0 0 12 3a3.4 3.4 0 0 0-3.4 3.4v5.2A3.4 3.4 0 0 0 12 15Z"/><path d="M5.6 10.6a6.4 6.4 0 0 0 12.8 0M12 17.2v3.4M8.8 20.6h6.4"/></svg></button>
         <input class="file-input" id="file-input" type="file" accept="image/*" multiple />
         <textarea id="text" rows="1" autocomplete="off" autocapitalize="sentences" spellcheck="false" data-i18n-placeholder="askChatGpt" placeholder="问问 ChatGPT Win"></textarea>
         <button class="send-btn stop-btn composer-action-hidden" id="stop" type="button" title="取消当前 Codex 回复" aria-label="取消当前 Codex 回复" hidden><span class="stop-square" aria-hidden="true"></span></button>
@@ -3318,6 +3480,8 @@
     const sendButton = document.getElementById('send');
     const stopButton = document.getElementById('stop');
     const attachButton = document.getElementById('attach');
+    const voiceInputButton = document.getElementById('voice-input');
+    let activeVoiceRecognition = null;
     const fileInput = document.getElementById('file-input');
     const attachmentTray = document.getElementById('attachment-tray');
     const notice = document.getElementById('notice');
@@ -3342,6 +3506,13 @@
     const modelBadge = document.getElementById('model-badge');
     const modelMenuCard = document.getElementById('model-menu-card');
     const modelText = document.getElementById('model-text');
+    const promptLibraryPanel = document.getElementById('prompt-library-panel');
+    const promptLibraryBadge = document.getElementById('prompt-badge');
+    const promptLibraryClose = document.getElementById('prompt-library-close');
+    const promptLibraryList = document.getElementById('prompt-library-list');
+    const promptLibraryTitle = document.getElementById('prompt-library-title');
+    const promptLibraryText = document.getElementById('prompt-library-text');
+    const promptLibraryForm = document.getElementById('prompt-library-form');
     const slashCommandMenu = document.getElementById('slash-command-menu');
     const routeBadge = document.getElementById('route-badge');
     const routeIcon = document.getElementById('route-icon');
@@ -3384,6 +3555,8 @@
     const threadActionPinToggleText = document.getElementById('thread-action-pin-toggle-text');
     const threadActionCompact = document.getElementById('thread-action-compact');
     const threadActionCompactIcon = document.getElementById('thread-action-compact-icon');
+    const threadActionExport = document.getElementById('thread-action-export');
+    const threadActionExportIcon = document.getElementById('thread-action-export-icon');
     const threadActionReview = document.getElementById('thread-action-review');
     const threadActionReviewIcon = document.getElementById('thread-action-review-icon');
     const threadRenameInput = document.getElementById('thread-rename-input');
@@ -3555,12 +3728,14 @@
         closeTasks: '关闭任务列表', newTask: '新建任务', pullRequests: '拉取请求', scheduled: '已安排', plugins: '插件', settings: '设置', archivedTasks: '已归档任务',
         searchTasks: '搜索任务', showAssistant: '显示小助手', mobileSync: '手机同步到当前 Codex 对话', pendingImages: '待发送图片', queued: '待发送', modelAndReasoning: '模型与推理等级', askChatGpt: '问问 ChatGPT Win',
         language: '语言', languageDetail: '在中文和 English 之间切换此手机控制页', languageChanged: '已切换为中文', languageValue: '中文', theme: '背景主题', themeDetail: '为手机控制页选择黑色夜空或白夜背景', blackSky: '黑色夜空', whiteNight: '白夜', selectTask: '选择任务', newTaskLabel: '新任务', loadingHistory: '正在加载这个 ChatGPT 任务的本机聊天记录…', noHistory: '这个任务暂时没有可加载的聊天记录。'
+        , speakReply: '朗读这条回复', exportThread: '导出对话', promptLibrary: '提示词库', promptLibraryEmpty: '暂无提示词，先保存一条吧', promptTitlePlaceholder: '提示词标题（可选）', promptTextPlaceholder: '提示词内容，点选后填入输入框', promptSave: '保存', promptDelete: '删除', promptFilled: '提示词已填入输入框', promptCreated: '已保存提示词', promptDeleted: '已删除提示词'
       },
       en: {
         languageToggleLabel: '中文', languageSwitchTitle: 'Switch to Chinese', compact: 'Compact', archive: 'Archive', rename: 'Rename', compactContext: 'Compact context', cancel: 'Cancel', save: 'Save',
         closeTasks: 'Close task list', newTask: 'New task', pullRequests: 'Pull requests', scheduled: 'Scheduled', plugins: 'Plugins', settings: 'Settings', archivedTasks: 'Archived tasks',
         searchTasks: 'Search tasks', showAssistant: 'Show assistant', mobileSync: 'Mobile sync for the current Codex conversation', pendingImages: 'Images to send', queued: 'Queued', modelAndReasoning: 'Model and reasoning level', askChatGpt: 'Ask ChatGPT Win',
         language: 'Language', languageDetail: 'Switch this mobile control page between English and Chinese', languageChanged: 'Switched to English', languageValue: 'English', theme: 'Background theme', themeDetail: 'Choose a black-sky or white-night background for this mobile control page', blackSky: 'Black sky', whiteNight: 'White night', selectTask: 'Select task', newTaskLabel: 'New task', loadingHistory: 'Loading the local chat history for this ChatGPT task…', noHistory: 'There is no chat history available for this task yet.'
+        , speakReply: 'Read this reply aloud', exportThread: 'Export chat', promptLibrary: 'Prompts', promptLibraryEmpty: 'No prompts yet. Save one below.', promptTitlePlaceholder: 'Prompt title (optional)', promptTextPlaceholder: 'Prompt text — tap to fill the input box', promptSave: 'Save', promptDelete: 'Delete', promptFilled: 'Prompt filled into the input box', promptCreated: 'Prompt saved', promptDeleted: 'Prompt deleted'
       }
     };
     let uiLanguage = localStorage.getItem(UI_LANGUAGE_STORAGE_KEY) === 'en' ? 'en' : 'zh';
@@ -3718,33 +3893,90 @@
         });
         setNotice('语音内容已填入输入框', 'ok');
       };
-      recognition.onerror = event => setNotice(`语音输入失败：${event.error || '请检查麦克风权限'}`, 'error');
+      const clearRecordingState = () => {
+        if (activeVoiceRecognition === recognition) activeVoiceRecognition = null;
+        voiceInputButton.classList.remove('is-recording');
+      };
+      recognition.onerror = event => {
+        clearRecordingState();
+        setNotice(`语音输入失败：${event.error || '请检查麦克风权限'}`, 'error');
+      };
+      recognition.onend = clearRecordingState;
       try {
+        activeVoiceRecognition = recognition;
+        voiceInputButton.classList.add('is-recording');
         recognition.start();
         setNotice('正在监听语音…', 'ok');
       } catch (error) {
+        clearRecordingState();
         setNotice(error.message || '语音输入无法启动', 'error');
       }
     }
 
-    function speakLatestAssistantReply() {
+    let speakingButton = null;
+    function stopSpeech() {
+      if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+      if (speakingButton) {
+        speakingButton.classList.remove('is-speaking');
+        speakingButton = null;
+      }
+    }
+    function speakText(text) {
+      if (!('speechSynthesis' in window)) {
+        setNotice('当前浏览器不支持朗读', 'error');
+        return false;
+      }
+      const content = String(text || '').replace(/\s+/g, ' ').trim().slice(0, 4000);
+      if (!content) {
+        setNotice('当前任务没有可朗读的回复', 'error');
+        return false;
+      }
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(content);
+      const zhVoice = (window.speechSynthesis.getVoices() || []).find(voice => /^zh/i.test(voice.lang || ''));
+      if (zhVoice) utterance.voice = zhVoice;
+      utterance.lang = uiLanguage === 'en' ? 'en-US' : 'zh-CN';
+      window.speechSynthesis.speak(utterance);
+      return true;
+    }
+    function toggleSpeakMessage(button, bubble) {
+      if (speakingButton === button) {
+        stopSpeech();
+        return;
+      }
+      const text = (bubble.innerText || '').trim();
+      if (!text) {
+        setNotice('这条消息没有可朗读的文本', 'error');
+        return;
+      }
       if (!('speechSynthesis' in window)) {
         setNotice('当前浏览器不支持朗读', 'error');
         return;
       }
+      stopSpeech();
+      const utterance = new SpeechSynthesisUtterance(String(text).replace(/\s+/g, ' ').trim().slice(0, 4000));
+      const zhVoice = (window.speechSynthesis.getVoices() || []).find(voice => /^zh/i.test(voice.lang || ''));
+      if (zhVoice) utterance.voice = zhVoice;
+      utterance.lang = uiLanguage === 'en' ? 'en-US' : 'zh-CN';
+      const done = () => {
+        button.classList.remove('is-speaking');
+        if (speakingButton === button) speakingButton = null;
+      };
+      utterance.onend = done;
+      utterance.onerror = done;
+      button.classList.add('is-speaking');
+      speakingButton = button;
+      window.speechSynthesis.speak(utterance);
+      setNotice('正在朗读回复', 'ok');
+    }
+    function speakLatestAssistantReply() {
       const latest = [...thread.querySelectorAll('.message.assistant .bubble')].pop();
-      const text = latest?.innerText?.trim();
-      if (!text) {
+      if (!latest) {
         setNotice('当前任务没有可朗读的回复', 'error');
         return;
       }
-      window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = uiLanguage === 'en' ? 'en-US' : 'zh-CN';
-      window.speechSynthesis.speak(utterance);
-      setNotice('正在朗读最近一条回复', 'ok');
+      speakText(latest.innerText || '');
     }
-
     async function copyMobileConnectionAddress() {
       const address = location.href;
       try {
@@ -3791,6 +4023,7 @@
       });
       if (languageToggleLabel) languageToggleLabel.textContent = t('languageToggleLabel');
       updateThreadTitle();
+      if (promptLibraryPanel && !promptLibraryPanel.hidden) loadPromptLibrary();
     }
 
     function toggleUiLanguage() {
@@ -4661,11 +4894,13 @@
     const RENAME_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg>';
     const COMPACT_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3h8"></path><path d="M6 7h12"></path><path d="M9 11h6"></path><path d="M12 15v6"></path><path d="m8 17 4 4 4-4"></path></svg>';
     const REVIEW_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14.5 4.5 5 5"></path><path d="m4 20 4.4-1.1L19.5 7.8a2.1 2.1 0 0 0-3-3L5.4 15.9 4 20Z"></path><path d="M13 6.3 17.7 11"></path></svg>';
+    const EXPORT_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v11"></path><path d="m7.5 10 4.5 4.5L16.5 10"></path><path d="M4 16.5V19a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2.5"></path></svg>';
     threadCurrentPin.innerHTML = PIN_ICON;
     threadActionArchiveIcon.innerHTML = ARCHIVE_ICON;
     threadActionRenameIcon.innerHTML = RENAME_ICON;
     threadActionPinToggleIcon.innerHTML = PIN_ICON;
     threadActionCompactIcon.innerHTML = COMPACT_ICON;
+    threadActionExportIcon.innerHTML = EXPORT_ICON;
     threadActionReviewIcon.innerHTML = REVIEW_ICON;
     function updateRouteBadge() {
       const text = routeTextForKind(activeApiKind);
@@ -6098,6 +6333,16 @@
       setMetaLabel(meta, options.label || (role === 'user' ? '你' : 'Codex'));
       setMarkdown(bubble, text);
       wrap.append(meta, bubble);
+      if (role === 'assistant' && !options.pending) {
+        const speakButton = document.createElement('button');
+        speakButton.type = 'button';
+        speakButton.className = 'speak-btn';
+        speakButton.title = t('speakReply');
+        speakButton.setAttribute('aria-label', t('speakReply'));
+        speakButton.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5v5h3.6L12 18.5v-13L7.6 9.5H4Z"/><path d="M15.2 9a4.2 4.2 0 0 1 0 6M17.5 6.8a7.2 7.2 0 0 1 0 10.4"/></svg>';
+        speakButton.addEventListener('click', () => toggleSpeakMessage(speakButton, bubble));
+        wrap.append(speakButton);
+      }
       article.appendChild(wrap);
       thread.appendChild(article);
       if (!options.skipScroll) scrollBottom();
@@ -7654,6 +7899,122 @@
       }
     }
 
+    function exportCurrentThread() {
+      const targetThreadId = actionThreadId || selectedThreadId;
+      if (!targetThreadId) {
+        setNotice('请先选择一个任务', 'error');
+        return;
+      }
+      closeThreadActionCard();
+      const params = new URLSearchParams({ token, thread: targetThreadId, limit: '120' });
+      window.open(apiUrl(`/codex/export?${params}`), '_blank', 'noopener');
+      setNotice('正在导出对话为 Markdown', 'ok');
+    }
+
+    let promptLibraryCache = [];
+    function renderPromptLibrary(prompts) {
+      if (!promptLibraryList) return;
+      promptLibraryCache = Array.isArray(prompts) ? prompts : [];
+      if (!promptLibraryCache.length) {
+        promptLibraryList.innerHTML = `<div class="prompt-library-empty">${escapeHtml(t('promptLibraryEmpty'))}</div>`;
+        return;
+      }
+      const deleteLabel = escapeHtml(t('promptDelete'));
+      promptLibraryList.innerHTML = promptLibraryCache.map(item => {
+        const id = escapeHtml(item.id || '');
+        const title = escapeHtml(item.title || '');
+        return `<div class="prompt-library-item" data-id="${id}">
+          <span class="prompt-library-item-title" role="button" tabindex="0" title="${title}">${title}</span>
+          <button class="prompt-library-item-delete" type="button" data-delete-id="${id}" aria-label="${deleteLabel}">${deleteLabel}</button>
+        </div>`;
+      }).join('');
+    }
+
+    async function loadPromptLibrary() {
+      if (!promptLibraryPanel) return;
+      try {
+        const response = await fetchApi(`/codex/prompts?token=${encodeURIComponent(token)}`, { cache: 'no-store', apiTimeoutMs: 8000, routeSwitchQuiet: true });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data.ok) throw new Error(data.message || '加载提示词库失败');
+        renderPromptLibrary(data.prompts || []);
+      } catch (error) {
+        promptLibraryList.innerHTML = '';
+        setNotice(error.message || '加载提示词库失败', 'error');
+      }
+    }
+
+    function openPromptLibrary() {
+      if (!promptLibraryPanel) return;
+      promptLibraryPanel.hidden = false;
+      loadPromptLibrary();
+    }
+    function closePromptLibrary() {
+      if (promptLibraryPanel) promptLibraryPanel.hidden = true;
+    }
+    function togglePromptLibrary() {
+      if (promptLibraryPanel && !promptLibraryPanel.hidden) closePromptLibrary();
+      else openPromptLibrary();
+    }
+
+    function fillPromptFromLibrary(id) {
+      const item = promptLibraryCache.find(entry => entry.id === id);
+      if (!item) return;
+      textarea.value = item.text;
+      autosize();
+      textarea.focus();
+      setNotice(t('promptFilled'), 'ok');
+      closePromptLibrary();
+    }
+
+    async function savePromptFromLibrary(event) {
+      event.preventDefault();
+      const title = promptLibraryTitle.value.replace(/\s+/g, ' ').trim();
+      const text = promptLibraryText.value.trim();
+      if (!title || !text) {
+        setNotice('提示词标题和内容不能为空', 'error');
+        return;
+      }
+      promptLibrarySave.disabled = true;
+      try {
+        const response = await fetchApi('/codex/prompts', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-mobile-typer-token': token },
+          body: JSON.stringify({ action: 'create', title, text }),
+          apiTimeoutMs: 8000,
+          routeSwitchQuiet: true,
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data.ok) throw new Error(data.message || '保存提示词失败');
+        promptLibraryTitle.value = '';
+        promptLibraryText.value = '';
+        renderPromptLibrary(data.prompts || promptLibraryCache);
+        setNotice(t('promptCreated'), 'ok');
+      } catch (error) {
+        setNotice(error.message || '保存提示词失败', 'error');
+      } finally {
+        promptLibrarySave.disabled = false;
+      }
+    }
+
+    async function deletePromptFromLibrary(id) {
+      if (!id) return;
+      try {
+        const response = await fetchApi('/codex/prompts', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-mobile-typer-token': token },
+          body: JSON.stringify({ action: 'delete', id }),
+          apiTimeoutMs: 8000,
+          routeSwitchQuiet: true,
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data.ok) throw new Error(data.message || '删除提示词失败');
+        renderPromptLibrary(data.prompts || promptLibraryCache.filter(item => item.id !== id));
+        setNotice(t('promptDeleted'), 'ok');
+      } catch (error) {
+        setNotice(error.message || '删除提示词失败', 'error');
+      }
+    }
+
     async function renameCurrentThread() {
       const current = actionThreadItem();
       if (!current) return;
@@ -7907,6 +8268,7 @@
 
       serializeMessages();
       stopPolling();
+      stopSpeech();
       selectedThreadId = threadId;
       syncedThreadId = '';
       localStorage.setItem('codexMini.selectedThread', selectedThreadId);
@@ -7996,6 +8358,7 @@
       if (pollTimer) clearInterval(pollTimer);
       pollTimer = null;
       stopRunDurationTimer();
+      stopSpeech();
       activeWatch = null;
       pollAttempts = 0;
       activeAssistant = null;
@@ -8061,6 +8424,9 @@
             : activeCommandUi ? activeCommandUi.completeLabel(finalDurationText) : `Codex · 已处理 ${finalDurationText}`);
           activeAssistant.article.classList.remove('pending');
           addDetails(activeAssistant, data.steps || []);
+          if (voiceReadEnabled && !isErrorStatus && finalText) {
+            speakText(finalText);
+          }
           serializeMessages();
           if (!isErrorStatus && promoteNextQueuedSendAfterCurrent(data)) return;
           if (isErrorStatus) clearQueuedSends();
@@ -8759,6 +9125,16 @@
     attachButton.addEventListener('click', () => {
       fileInput.click();
     });
+    voiceInputButton.addEventListener('click', () => {
+      if (activeVoiceRecognition) {
+        try { activeVoiceRecognition.stop(); } catch {}
+        activeVoiceRecognition = null;
+        voiceInputButton.classList.remove('is-recording');
+        setNotice('已停止语音输入', 'ok');
+        return;
+      }
+      startVoiceDictation();
+    });
     fileInput.addEventListener('change', async () => {
       const files = [...fileInput.files || []].filter(file => file.type.startsWith('image/'));
       try {
@@ -8811,7 +9187,36 @@
     wireInstantActionButton(threadActionRename, showRenamePanel);
     wireInstantActionButton(threadActionPinToggle, toggleCurrentThreadPin);
     wireInstantActionButton(threadActionCompact, compactCurrentThread);
+    wireInstantActionButton(threadActionExport, exportCurrentThread);
     wireInstantActionButton(threadActionReview, reviewCurrentThread);
+    wireInstantActionButton(promptLibraryBadge, togglePromptLibrary);
+    wireInstantActionButton(promptLibraryClose, closePromptLibrary);
+    promptLibraryForm.addEventListener('submit', savePromptFromLibrary);
+    promptLibraryList.addEventListener('click', event => {
+      const deleteButton = event.target.closest('[data-delete-id]');
+      if (deleteButton) {
+        event.stopPropagation();
+        deletePromptFromLibrary(deleteButton.dataset.deleteId);
+        return;
+      }
+      const item = event.target.closest('.prompt-library-item');
+      if (item) {
+        event.stopPropagation();
+        fillPromptFromLibrary(item.dataset.id);
+      }
+    });
+    document.addEventListener('click', event => {
+      if (!promptLibraryPanel.hidden && !promptLibraryPanel.contains(event.target) && !promptLibraryBadge.contains(event.target)) {
+        closePromptLibrary();
+      }
+    });
+    promptLibraryList.addEventListener('keydown', event => {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      const title = event.target.closest('.prompt-library-item-title');
+      if (!title) return;
+      event.preventDefault();
+      fillPromptFromLibrary(title.closest('.prompt-library-item').dataset.id);
+    });
     wireInstantActionButton(threadRenameCancel, cancelThreadRename);
     wireInstantActionButton(threadRenameSave, renameCurrentThread);
     wireInstantActionButton(contextQuickCompact, sendContextCompactCommand);
@@ -9082,6 +9487,7 @@
     document.addEventListener('visibilitychange', () => {
       if (!document.hidden) scheduleForegroundStateRefresh();
     });
+    window.addEventListener('beforeunload', () => { if ('speechSynthesis' in window) window.speechSynthesis.cancel(); });
     window.addEventListener('pageshow', scheduleForegroundStateRefresh);
     window.addEventListener('focus', scheduleForegroundStateRefresh);
 

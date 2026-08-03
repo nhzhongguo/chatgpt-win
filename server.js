@@ -310,6 +310,7 @@ function emptyCodexMiniState() {
     titleOverrides: {},
     guiFailureReports: {},
     scheduledTasks: [],
+    promptLibrary: [],
   };
 }
 
@@ -322,6 +323,7 @@ function readCodexMiniState() {
       titleOverrides: parsed.titleOverrides && typeof parsed.titleOverrides === 'object' ? parsed.titleOverrides : {},
       guiFailureReports: normalizeGuiFailureReports(parsed.guiFailureReports),
       scheduledTasks: normalizeScheduledTasks(parsed.scheduledTasks),
+      promptLibrary: normalizePromptLibrary(parsed.promptLibrary),
     };
   } catch {
     return emptyCodexMiniState();
@@ -336,6 +338,7 @@ function writeCodexMiniState(state) {
     titleOverrides: state.titleOverrides && typeof state.titleOverrides === 'object' ? state.titleOverrides : {},
     guiFailureReports: normalizeGuiFailureReports(state.guiFailureReports),
     scheduledTasks: normalizeScheduledTasks(state.scheduledTasks),
+    promptLibrary: normalizePromptLibrary(state.promptLibrary),
   };
   fs.writeFileSync(STATE_FILE, `${JSON.stringify(normalized, null, 2)}\n`, 'utf8');
   invalidateCodexThreadListCache();
@@ -344,6 +347,27 @@ function writeCodexMiniState(state) {
 
 
 
+const MAX_PROMPT_LIBRARY_ITEMS = 200;
+function normalizePromptLibrary(value) {
+  if (!Array.isArray(value)) return [];
+  const out = [];
+  for (const item of value) {
+    if (!item || typeof item !== 'object') continue;
+    const title = String(item.title || '').trim().slice(0, 60);
+    const text = String(item.text || '').trim().slice(0, 4000);
+    if (!title || !text) continue;
+    const now = Date.now();
+    out.push({
+      id: String(item.id || '').slice(0, 64) || `p_${now.toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+      title,
+      text,
+      createdAt: Number(item.createdAt) || now,
+      updatedAt: Number(item.updatedAt) || now,
+    });
+    if (out.length >= MAX_PROMPT_LIBRARY_ITEMS) break;
+  }
+  return out;
+}
 function normalizeGuiFailureReports(value) {
   const out = {};
   if (!value || typeof value !== 'object') return out;
@@ -2414,6 +2438,66 @@ async function handleThreadHistory(req, res) {
   }
 }
 
+function buildMarkdownExport(threadId, data) {
+  const messages = Array.isArray(data?.messages) ? data.messages : [];
+  const lines = [
+    '# Codex 对话导出',
+    '',
+    `- 任务 ID：${threadId}`,
+    `- 导出时间：${new Date().toISOString()}`,
+    `- 消息数：${messages.length}`,
+    '',
+  ];
+  for (const row of messages) {
+    const roleLabel = row?.role === 'user' ? '用户' : 'ChatGPT Win';
+    const time = row?.timestamp ? `（${row.timestamp}）` : '';
+    lines.push(`## ${roleLabel}${time}`, '');
+    const text = String(row?.text || '').replace(/\r\n/g, '\n').trim();
+    lines.push(text || '（无文本）');
+    if (Array.isArray(row?.attachments) && row.attachments.length) {
+      for (const attachment of row.attachments) {
+        const name = attachment?.name ? ` ${attachment.name}` : '';
+        const url = attachment?.url ? `（${attachment.url}）` : '';
+        lines.push(`- 附件${name}${url}`);
+      }
+    }
+    lines.push('');
+  }
+  return lines.join('\n');
+}
+
+async function handleExport(req, res) {
+  if (!isAuthorized(req)) {
+    return json(res, 401, { ok: false, code: 'UNAUTHORIZED', message: '访问令牌不正确。' });
+  }
+  try {
+    const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+    const threadId = url.searchParams.get('thread') || '';
+    if (!isCodexThreadId(threadId)) {
+      return json(res, 400, { ok: false, code: 'BAD_THREAD_ID', message: '任务 ID 不正确。' });
+    }
+    const limit = url.searchParams.get('limit') || MAX_HISTORY_MESSAGES;
+    let data;
+    try {
+      const thread = await codexAppServer.readThread(threadId, true);
+      data = historyFromAppServerThread(thread, limit);
+    } catch (appServerError) {
+      data = parseCodexThreadHistory(threadId, limit);
+    }
+    const markdown = buildMarkdownExport(threadId, data);
+    const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
+    const fileName = `codex-thread-${threadId.slice(0, 8)}-${stamp}.md`;
+    res.writeHead(200, {
+      'Content-Type': 'text/markdown; charset=utf-8',
+      'Content-Length': Buffer.byteLength(markdown),
+      'Content-Disposition': `attachment; filename="${fileName}"`,
+      'Cache-Control': 'no-store',
+    });
+    res.end(markdown);
+  } catch (error) {
+    return json(res, 500, { ok: false, code: 'CODEX_EXPORT_FAILED', message: '导出对话失败。', detail: String(error && error.message || error) });
+  }
+}
 function extractReasoningText(payload) {
   const parts = [];
   if (Array.isArray(payload.summary)) {
@@ -3456,6 +3540,69 @@ async function handleSchedules(req, res) {
       ok: false,
       code: error?.code || 'SCHEDULE_FAILED',
       message: error?.message || '计划操作失败。',
+    });
+  }
+}
+
+async function handlePromptLibrary(req, res) {
+  if (!isAuthorized(req)) return json(res, 401, { ok: false, code: 'UNAUTHORIZED', message: '访问令牌不正确。' });
+  const state = readCodexMiniState();
+  if (req.method === 'GET') {
+    return json(res, 200, { ok: true, prompts: state.promptLibrary });
+  }
+  let payload = {};
+  try {
+    payload = JSON.parse(await readBody(req) || '{}');
+  } catch (error) {
+    return json(res, 400, { ok: false, code: 'BAD_REQUEST', message: error.message || '请求格式不正确。' });
+  }
+  const action = String(payload.action || '').trim();
+  const id = String(payload.id || '').trim();
+  let prompts = state.promptLibrary;
+  try {
+    if (action === 'create') {
+      const title = String(payload.title || '').trim().slice(0, 60);
+      const text = String(payload.text || '').trim().slice(0, 4000);
+      if (!title || !text) {
+        return json(res, 400, { ok: false, code: 'BAD_PROMPT', message: '提示词标题和内容不能为空。' });
+      }
+      const now = Date.now();
+      prompts = [...prompts, {
+        id: `p_${now.toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+        title,
+        text,
+        createdAt: now,
+        updatedAt: now,
+      }].slice(-MAX_PROMPT_LIBRARY_ITEMS);
+      writeCodexMiniState({ ...state, promptLibrary: prompts });
+      return json(res, 200, { ok: true, prompts, message: '已保存提示词。' });
+    }
+    if (action === 'update') {
+      const existing = prompts.find(item => item.id === id);
+      if (!existing) {
+        return json(res, 404, { ok: false, code: 'PROMPT_NOT_FOUND', message: '没有找到这条提示词。' });
+      }
+      const title = String(payload.title !== undefined ? payload.title : existing.title).trim().slice(0, 60);
+      const text = String(payload.text !== undefined ? payload.text : existing.text).trim().slice(0, 4000);
+      if (!title || !text) {
+        return json(res, 400, { ok: false, code: 'BAD_PROMPT', message: '提示词标题和内容不能为空。' });
+      }
+      prompts = prompts.map(item => item.id === id ? { ...item, title, text, updatedAt: Date.now() } : item);
+      writeCodexMiniState({ ...state, promptLibrary: prompts });
+      return json(res, 200, { ok: true, prompts, message: '已更新提示词。' });
+    }
+    if (action === 'delete') {
+      prompts = prompts.filter(item => item.id !== id);
+      writeCodexMiniState({ ...state, promptLibrary: prompts });
+      return json(res, 200, { ok: true, prompts, message: '已删除提示词。' });
+    }
+    return json(res, 400, { ok: false, code: 'BAD_PROMPT_ACTION', message: '不支持的提示词库操作。' });
+  } catch (error) {
+    return json(res, 500, {
+      ok: false,
+      code: 'PROMPT_LIBRARY_FAILED',
+      message: '提示词库操作失败。',
+      detail: String(error && error.message || error),
     });
   }
 }
@@ -4746,6 +4893,7 @@ const apiRouteTable = [
   { method: 'GET', prefix: '/codex/health', handler: handleHealth },
   { method: 'POST', prefix: '/codex/rotate-token', handler: handleRotateToken },
   { method: 'GET', prefix: '/codex/download', handler: handleDownload },
+  { method: 'GET', prefix: '/codex/export', handler: handleExport },
   { method: 'GET', prefix: '/codex/attachment', handler: handleHistoryAttachment },
   { method: 'GET', prefix: '/codex/config', handler: handleClientConfig },
   { method: 'GET', prefix: '/codex/environment', handler: handleEnvironment },
@@ -4757,6 +4905,7 @@ const apiRouteTable = [
   { method: 'GET', prefix: '/codex/pull-requests', handler: handlePullRequests },
   { method: 'GET', prefix: '/codex/plugins', handler: handlePlugins },
   { method: '*', prefix: '/codex/schedules', handler: handleSchedules },
+  { method: '*', prefix: '/codex/prompts', handler: handlePromptLibrary },
   { method: 'GET', prefix: '/codex/history', handler: handleThreadHistory },
   { method: 'GET', prefix: '/codex/approvals', handler: handleCodexApprovals },
   { method: 'POST', prefix: '/codex/approval', handler: handleCodexApproval },

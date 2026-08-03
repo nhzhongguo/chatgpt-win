@@ -40,10 +40,38 @@ test('All required route handlers are defined', () => {
     '/codex/schedules', '/codex/thread-action',
     '/send', '/codex/attachment',
     '/codex/download', '/codex/rotate-token',
+    '/codex/export', '/codex/prompts',
   ];
   for (const route of routes) {
     assert.ok(src.includes(route), 'Route ' + route + ' is defined');
   }
+});
+
+test('Phase 1: Markdown export and prompt library handlers are defined', () => {
+  const src = require('fs').readFileSync('./server.js', 'utf8');
+  assert.ok(src.includes('function buildMarkdownExport'), 'buildMarkdownExport defined');
+  assert.ok(src.includes('function handleExport'), 'handleExport defined');
+  assert.ok(src.includes('function handlePromptLibrary'), 'handlePromptLibrary defined');
+  assert.ok(src.includes('function normalizePromptLibrary'), 'normalizePromptLibrary defined');
+  assert.ok(src.includes('MAX_PROMPT_LIBRARY_ITEMS'), 'prompt library capacity constant defined');
+  assert.ok(src.includes('Content-Disposition'), 'export response uses attachment disposition');
+  assert.ok(src.includes('text/markdown'), 'export response uses markdown content type');
+  assert.ok(src.includes("action === 'create'"), 'prompt library supports create');
+  assert.ok(src.includes("action === 'delete'"), 'prompt library supports delete');
+});
+
+test('Phase 1: Mobile UI includes voice input, TTS, export, and prompt library', () => {
+  const html = require('fs').readFileSync('./public/index.html', 'utf8');
+  assert.ok(html.includes('id="voice-input"'), 'voice input button');
+  assert.ok(html.includes('startVoiceDictation'), 'voice dictation logic');
+  assert.ok(html.includes('speakText'), 'TTS speak helper');
+  assert.ok(html.includes('voiceReadEnabled'), 'auto-read reply toggle');
+  assert.ok(html.includes('thread-action-export'), 'export thread action button');
+  assert.ok(html.includes('exportCurrentThread'), 'export thread logic');
+  assert.ok(html.includes('id="prompt-badge"'), 'prompt library badge');
+  assert.ok(html.includes('id="prompt-library-panel"'), 'prompt library panel');
+  assert.ok(html.includes('loadPromptLibrary'), 'prompt library loader');
+  assert.ok(html.includes('promptLibraryCreated') === false, 'notice key mismatch guard');
 });
 
 test('Rate limit cleanup prevents memory leak', () => {
