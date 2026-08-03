@@ -17,7 +17,7 @@
   <ItemGroup>
     <PackageReference Include="QRCoder" Version="1.6.0" />
     <EmbeddedResource Include="CodexMaxPayload.zip" LogicalName="CodexMaxPayload.zip" Condition="Exists('CodexMaxPayload.zip')" />
-    <Content Include="Assets\ChatGPTWin.ico" CopyToOutputDirectory="PreserveNewest" />
+    <EmbeddedResource Include="Assets\ChatGPTWin.ico" LogicalName="CodexMiniWin.Resources.ChatGPTWin.ico" />
     <Content Include="..\..\server.js" Link="Resources\CodexMaxProject\server.js" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\..\package.json" Link="Resources\CodexMaxProject\package.json" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\..\src\**\*" Link="Resources\CodexMaxProject\src\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />

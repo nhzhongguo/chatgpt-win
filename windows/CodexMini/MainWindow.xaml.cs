@@ -19,6 +19,7 @@ public partial class MainWindow : Window
 
     public MainWindow()
     {
+        Icon = LoadWindowIcon();
         InitializeComponent();
         actionControls = new List<WpfControl>
         {
@@ -269,4 +270,27 @@ public partial class MainWindow : Window
         ServiceState.Stopped => "已停止",
         _ => "未知"
     };
+
+    // 单文件发布模式下 XAML 无法解析 Content 文件的相对 URI（ContentFilePart 缺陷），
+    // 改为从内嵌资源加载窗口图标。
+    private static ImageSource LoadWindowIcon()
+    {
+        try
+        {
+            using var stream = typeof(MainWindow).Assembly
+                .GetManifestResourceStream("CodexMiniWin.Resources.ChatGPTWin.ico");
+            if (stream is null) return null!;
+            var image = new BitmapImage();
+            image.BeginInit();
+            image.StreamSource = stream;
+            image.CacheOption = BitmapCacheOption.OnLoad;
+            image.EndInit();
+            image.Freeze();
+            return image;
+        }
+        catch
+        {
+            return null!;
+        }
+    }
 }
