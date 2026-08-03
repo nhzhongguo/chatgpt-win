@@ -41,6 +41,7 @@ import com.nhzhongguo.codexmax.ui.state.ConnectionStateViewModel
 import com.nhzhongguo.codexmax.ui.state.Screen
 import com.nhzhongguo.codexmax.ui.state.WebViewHolder
 import com.nhzhongguo.codexmax.ui.theme.CodexMaxTheme
+import com.nhzhongguo.codexmax.work.ServerHealthWorker
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -81,6 +82,9 @@ class MainActivity : ComponentActivity() {
         ) {
             notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
+
+        // 注册周期后台健康检查（WorkManager，幂等）
+        ServerHealthWorker.schedule(this)
 
         setContent {
             CodexMaxTheme {

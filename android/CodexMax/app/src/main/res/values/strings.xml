@@ -54,4 +54,10 @@
     <string name="tap_to_open">点按返回 ChatGPT AZ</string>
     <string name="update_available">发现新版本 v%1$s，是否下载更新？</string>
     <string name="update_download">下载</string>
+    <string name="service_health_title">服务健康检查</string>
+    <string name="service_health_subtitle">后台每 15 分钟自动检测电脑端服务</string>
+    <string name="service_status_online">电脑端服务在线</string>
+    <string name="service_status_offline">电脑端服务离线</string>
+    <string name="service_status_unknown">尚未检查</string>
+    <string name="app_version_label">版本</string>
 </resources>

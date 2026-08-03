@@ -156,6 +156,8 @@ class Scheduler {
     this.pollMs = options.pollMs || SCHEDULED_TASK_POLL_MS;
     this._timer = null;
     this._runningTasks = new Set();
+    // 可选的执行日志回调（例如接入 SQLite 持久化队列的 logExecution）
+    this.logExecution = typeof options.logExecution === 'function' ? options.logExecution : null;
   }
 
   // ---- State access ----
@@ -237,6 +239,13 @@ class Scheduler {
     const id = String(taskId || '').trim();
     if (!id || this._runningTasks.has(id)) return null;
     this._runningTasks.add(id);
+    const taskStartedAt = Date.now();
+    const logRun = (status, errorText = '', detail = {}) => {
+      if (!this.logExecution) return;
+      try {
+        this.logExecution('', 'schedule_execute', status, Date.now() - taskStartedAt, errorText, detail);
+      } catch {}
+    };
     try {
       const state = this._readState();
       const task = state.scheduledTasks.find(t => t.id === id);
@@ -249,6 +258,7 @@ class Scheduler {
         const runtime = this.codexAppServer.runtimeForThread(task.threadId);
         const loadedThread = runtime?.status === 'running' ? null : await this.codexAppServer.readThread(task.threadId, false);
         if (runtime?.status === 'running' || loadedThread?.status?.type === 'active') {
+          logRun('skipped', '当前任务仍在运行，已跳过本次计划。', { taskId: id });
           return this._updateTaskState(id, current => ({
             ...current,
             updatedAt: new Date().toISOString(),
@@ -274,6 +284,7 @@ class Scheduler {
         clientUserMessageId: `schedule-${task.id}-${Date.now()}`,
       });
 
+      logRun('completed', '', { taskId: id, threadId: result.threadId || '' });
       return this._updateTaskState(id, current => ({
         ...current,
         updatedAt: new Date().toISOString(),
@@ -288,6 +299,7 @@ class Scheduler {
       const errorMsg = truncateText(error?.message || String(error), 500);
       const currentTask = this.getTasks().find(t => t.id === id);
       const retryAttempt = (currentTask?.retryCount || 0);
+      logRun('failed', errorMsg, { taskId: id, retryAttempt });
 
       // 检查是否应该重试
       if (shouldRetryTask(currentTask || task, retryAttempt)) {

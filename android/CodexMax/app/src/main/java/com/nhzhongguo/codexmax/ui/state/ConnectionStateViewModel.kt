@@ -42,6 +42,7 @@ data class ConnectionState(
     val updateInfo: UpdateInfo? = null,
     val promptedUpdateVersion: String? = null,
     val snackbarMessage: String? = null,
+    val serverOnline: Boolean? = null,
 )
 
 enum class Screen {
@@ -64,7 +65,40 @@ class ConnectionStateViewModel(
             addressInput = if (parsed.isValid()) recent else "",
             recentUrl = recent,
             hasRecent = parsed.isValid(),
+            serverOnline = readHealthStatus(),
         )
+    }
+
+    /** 读取 WorkManager 周期健康检查写入的最近一次连通状态 */
+    private fun readHealthStatus(): Boolean? {
+        return try {
+            val prefs = getApplication<Application>()
+                .getSharedPreferences(HEALTH_PREFS, android.content.Context.MODE_PRIVATE)
+            if (prefs.contains(HEALTH_KEY_OK)) prefs.getBoolean(HEALTH_KEY_OK, false) else null
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    /** 手动触发一次健康检查（前台任务，更新 UI 状态） */
+    fun refreshServerHealth() {
+        val connection = _state.value.activeConnection ?: return
+        viewModelScope.launch {
+            val online = withContext(Dispatchers.IO) {
+                try {
+                    val url = URL(connection.statusUrl())
+                    val http = url.openConnection() as HttpURLConnection
+                    http.connectTimeout = 4000
+                    http.readTimeout = 4000
+                    val ok = http.responseCode in 200..299
+                    http.disconnect()
+                    ok
+                } catch (e: Exception) {
+                    false
+                }
+            }
+            _state.update { it.copy(serverOnline = online) }
+        }
     }
 
     fun updateAddressInput(value: String) {
@@ -242,6 +276,8 @@ class ConnectionStateViewModel(
 
     companion object {
         private const val TAG = "ConnectionState"
+        private const val HEALTH_PREFS = "codex_max_connection"
+        private const val HEALTH_KEY_OK = "last_health_ok"
 
         fun compareVersions(left: String, right: String): Int {
             val leftParts = left.split(".")

@@ -100,6 +100,18 @@ function normalizeHistoryText(value) {
   return String(value || '').replace(/\r\n/g, '\n').trim();
 }
 
+function normalizeWebhook(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  try {
+    const url = new URL(raw);
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return '';
+    return url.toString().slice(0, 2000);
+  } catch {
+    return '';
+  }
+}
+
 function emptyState() {
   return {
     pinnedThreadIds: [],
@@ -107,6 +119,7 @@ function emptyState() {
     titleOverrides: {},
     guiFailureReports: {},
     scheduledTasks: [],
+    webhook: '',
   };
 }
 
@@ -163,6 +176,7 @@ class Store {
         titleOverrides: parsed.titleOverrides && typeof parsed.titleOverrides === 'object' ? parsed.titleOverrides : {},
         guiFailureReports: normalizeGuiFailureReports(parsed.guiFailureReports),
         scheduledTasks: normalizeScheduledTasks(parsed.scheduledTasks),
+        webhook: normalizeWebhook(parsed.webhook),
       };
       return this._cache;
     } catch {
@@ -179,6 +193,7 @@ class Store {
       titleOverrides: state.titleOverrides && typeof state.titleOverrides === 'object' ? state.titleOverrides : {},
       guiFailureReports: normalizeGuiFailureReports(state.guiFailureReports),
       scheduledTasks: normalizeScheduledTasks(state.scheduledTasks),
+      webhook: normalizeWebhook(state.webhook),
     };
     fs.writeFileSync(this.stateFile, `${JSON.stringify(normalized, null, 2)}\n`, 'utf8');
     this._cache = normalized;

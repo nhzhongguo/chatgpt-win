@@ -1,19 +1,24 @@
 'use strict';
 
 /**
- * HTTP 路由处理模块 - 集中管理所有 API 路由注册和分发
+ * HTTP 路由处理模块 - 统一的路由注册与分发中枢
+ *
+ * 设计说明（v4.0.0）：
+ * - server.js 只负责构建 API 路由表（method + prefix + handler），本模块负责匹配分发。
+ * - 前缀匹配（startsWith）语义与历史版本保持一致，避免行为变化。
+ * - 静态文件、OPTIONS、token cookie 等由 server.js 通过 staticHandler 委托，避免重复实现。
  */
 
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const crypto = require('crypto');
 const { URL } = require('url');
 
 // Helpers
 function json(res, status, body) {
   const payload = JSON.stringify(body);
   res.writeHead(status, {
+    ...(res._corsHeaders || {}),
     'Content-Type': 'application/json; charset=utf-8',
     'Content-Length': Buffer.byteLength(payload),
     'Cache-Control': 'no-store',
@@ -39,6 +44,47 @@ function getClientIp(req) {
   return (req.socket?.remoteAddress || '').replace('::ffff:', '') || '';
 }
 
+function getTokenFromRequest(req) {
+  const header = String(req.headers?.['x-mobile-typer-token'] || '');
+  if (header) return header;
+  try {
+    const token = new URL(req.url, `http://${req.headers?.host || 'localhost'}`).searchParams.get('token');
+    if (token) return token;
+  } catch {}
+  return '';
+}
+
+/**
+ * 计算 CORS 安全头。
+ * - 有 Origin（浏览器跨域）：仅放行回环地址或与请求 Host 同源的 Origin（局域网手机 WebView 场景），回显 Origin 而不是 *
+ * - 无 Origin（curl / 服务端 / 同源请求）：放行 *，保持兼容
+ * 附带安全头：nosniff、referrer-policy、vary。
+ */
+function corsHeaders(req) {
+  const requestOrigin = String(req?.headers?.origin || '').trim();
+  const requestHost = String(req?.headers?.host || '').toLowerCase();
+  let allowOrigin = '';
+  if (requestOrigin) {
+    let originHost = '';
+    try { originHost = new URL(requestOrigin).host.toLowerCase(); } catch {}
+    if (originHost && (originHost === requestHost || /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(originHost))) {
+      allowOrigin = requestOrigin;
+    }
+  } else {
+    allowOrigin = '*';
+  }
+  const headers = {
+    'access-control-allow-methods': 'GET,POST,OPTIONS',
+    'access-control-allow-headers': 'content-type,x-mobile-typer-token',
+    'access-control-allow-private-network': 'true',
+    'x-content-type-options': 'nosniff',
+    'referrer-policy': 'no-referrer',
+    vary: 'Origin',
+  };
+  if (allowOrigin) headers['access-control-allow-origin'] = allowOrigin;
+  return headers;
+}
+
 function displayPathName(cwd) {
   if (!cwd) return '对话';
   const normalized = path.normalize(cwd);
@@ -61,14 +107,14 @@ function existingProjectCwds(threads) {
 
 class Router {
   constructor(options = {}) {
-    this.routes = [];
     this.logger = options.logger || console;
     this.security = options.security;
-    this.store = options.store;
-    this.parser = options.parser;
-    this.scheduler = options.scheduler;
-    this.codexAppServer = options.codexAppServer;
-    this.appName = options.appName || 'ChatGPT Win';
+    // 精确/正则路由（保留通用匹配能力）
+    this.routes = [];
+    // 前缀路由（与历史 startsWith 语义一致，是 server.js 主要使用的形式）
+    this.prefixRoutes = [];
+    // 静态文件处理器（由 server.js 委托，保留 token cookie / HEAD 等行为）
+    this.staticHandler = options.staticHandler || null;
     this.publicDir = options.publicDir || path.join(__dirname, '..', 'public');
     this.distDir = options.distDir || path.join(__dirname, '..', 'dist');
     this.serviceVersion = options.serviceVersion || '0.0.0';
@@ -84,6 +130,20 @@ class Router {
   post(pattern, handler) { this.use('POST', pattern, handler); }
   delete(pattern, handler) { this.use('DELETE', pattern, handler); }
 
+  /**
+   * 注册前缀路由。method 支持 'GET' | 'POST' | '*'。
+   * handler 签名与历史一致：(req, res) => void
+   */
+  prefix(method, prefix, handler) {
+    this.prefixRoutes.push({ method, prefix, handler });
+  }
+
+  registerPrefixRoutes(table) {
+    for (const item of table || []) {
+      this.prefixRoutes.push({ method: item.method, prefix: item.prefix, handler: item.handler });
+    }
+  }
+
   _match(method, pathname) {
     for (const route of this.routes) {
       if (route.method !== method) continue;
@@ -97,136 +157,12 @@ class Router {
     return null;
   }
 
-  // ---- Auth Wrapper ----
-
-  _requireAuth(handler) {
-    return async (req, res, params) => {
-      if (!this.security.isAuthorized(req)) {
-        return json(res, 401, { ok: false, code: 'UNAUTHORIZED', message: '访问令牌不正确。' });
-      }
-      return handler.call(this, req, res, params);
-    };
-  }
-
-  // ---- Public Routes (no auth) ----
-
-  registerPublicRoutes() {
-    // Health check
-    this.get('/codex/health', (req, res) => {
-      const mem = process.memoryUsage();
-      return json(res, 200, {
-        ok: true,
-        service: this.appName,
-        version: this.serviceVersion,
-        uptime: Math.floor(process.uptime()),
-        memory: { rss: mem.rss, heapUsed: mem.heapUsed, heapTotal: mem.heapTotal },
-        platform: process.platform,
-        node: process.versions.node,
-        timestamp: new Date().toISOString(),
-      });
-    });
-  }
-
-  // ---- Authenticated Routes ----
-
-  registerApiRoutes(handlers) {
-    // handlers is an object of named handler functions that need access to server-level state
-    // This allows routes to delegate to existing handlers while we migrate incrementally
-
-    // Schedule routes - fully migrated to Scheduler module
-    this.use('*', '/codex/schedules', async (req, res) => {
-      if (!this.security.isAuthorized(req)) {
-        return json(res, 401, { ok: false, code: 'UNAUTHORIZED', message: '访问令牌不正确。' });
-      }
-
-      const workspace = handlers.listWorkspaceThreads ? await handlers.listWorkspaceThreads(160) : { threads: [] };
-      const projects = existingProjectCwds(workspace.threads || []).map(cwd => ({ cwd, name: displayPathName(cwd) }));
-
-      if (req.method === 'GET') {
-        return json(res, 200, { ok: true, schedules: this.scheduler.getTasks(), projects });
-      }
-
-      let payload = {};
-      try {
-        payload = JSON.parse(await readBody(req) || '{}');
-      } catch (error) {
-        return json(res, 400, { ok: false, code: 'BAD_REQUEST', message: error.message || '请求格式不正确。' });
-      }
-
-      const action = String(payload.action || '').trim();
-      const id = String(payload.id || '').trim();
-
-      try {
-        if (action === 'create') {
-          const task = this.scheduler.createTask(payload);
-          return json(res, 200, { ok: true, schedule: task, schedules: this.scheduler.getTasks(), projects, message: '已创建计划。' });
-        }
-        if (action === 'update') {
-          const task = this.scheduler.updateTask(id, payload);
-          return json(res, 200, { ok: true, schedule: task, schedules: this.scheduler.getTasks(), projects, message: '已更新计划。' });
-        }
-        if (action === 'toggle') {
-          const task = this.scheduler.toggleTask(id, payload.enabled === true);
-          return json(res, 200, { ok: true, schedule: task, schedules: this.scheduler.getTasks(), projects, message: payload.enabled ? '已启用计划。' : '已暂停计划。' });
-        }
-        if (action === 'delete') {
-          this.scheduler.deleteTask(id);
-          return json(res, 200, { ok: true, schedules: this.scheduler.getTasks(), projects, message: '已删除计划。' });
-        }
-        if (action === 'run') {
-          await this.scheduler.runTask(id, { force: true });
-          return json(res, 200, { ok: true, schedules: this.scheduler.getTasks(), projects, message: '已提交本次计划。' });
-        }
-        return json(res, 400, { ok: false, code: 'BAD_SCHEDULE_ACTION', message: '不支持的计划操作。' });
-      } catch (error) {
-        return json(res, error?.status || 500, {
-          ok: false,
-          code: error?.code || 'SCHEDULE_FAILED',
-          message: error?.message || '处理计划时出错。',
-        });
-      }
-    });
-
-    // Token rotation
-    this.post('/codex/rotate-token', this._requireAuth(async (req, res) => {
-      const newToken = this.security.rotateToken();
-      return json(res, 200, { ok: true, token: newToken, message: '访问令牌已更新。' });
-    }));
-
-    // Threads list
-    this.get('/codex/threads', this._requireAuth(async (req, res) => {
-      const url = new URL(req.url, `http://${req.headers.host}`);
-      const limit = Math.max(1, Math.min(160, Number(url.searchParams.get('limit')) || 80));
-      const includeArchived = url.searchParams.get('archived') === '1';
-      const threads = this.parser.listThreads(limit);
-      const result = { ok: true, threads, timestamp: new Date().toISOString() };
-      if (includeArchived) result.archivedThreads = this.parser.listArchivedThreads(limit);
-      return json(res, 200, result);
-    }));
-
-    // Thread history
-    this.get(/^\/codex\/threads\/(?<threadId>[a-f0-9-]+)\/history$/, this._requireAuth(async (req, res, params) => {
-      const url = new URL(req.url, `http://${req.headers.host}`);
-      const limit = Math.max(1, Math.min(120, Number(url.searchParams.get('limit')) || 80));
-      const result = this.parser.parseThreadHistory(params.threadId, limit);
-      return json(res, 200, result);
-    }));
-
-    // History attachment
-    this.get('/codex/attachment', this._requireAuth(async (req, res) => {
-      const url = new URL(req.url, `http://${req.headers.host}`);
-      const id = url.searchParams.get('id');
-      if (!id) return json(res, 400, { ok: false, message: '缺少附件 ID。' });
-      const attachment = this.parser.getHistoryAttachment(id);
-      if (!attachment) return json(res, 404, { ok: false, message: '附件不存在或已过期。' });
-      try {
-        const data = fs.readFileSync(attachment.filePath);
-        res.writeHead(200, { 'Content-Type': attachment.mime, 'Content-Length': data.length, 'Cache-Control': 'private, max-age=3600' });
-        res.end(data);
-      } catch {
-        return json(res, 404, { ok: false, message: '附件文件无法读取。' });
-      }
-    }));
+  _matchPrefix(method, pathname) {
+    for (const route of this.prefixRoutes) {
+      if (route.method !== '*' && route.method !== method) continue;
+      if (pathname.startsWith(route.prefix)) return route.handler;
+    }
+    return null;
   }
 
   // ---- Dispatch ----
@@ -235,33 +171,60 @@ class Router {
     const startTime = Date.now();
     const { pathname } = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
 
-    // Rate limiting
-    const ip = getClientIp(req);
-    if (!this.security.rateLimitCheck(ip)) {
-      this.logger.warn('rate_limited', { ip, path: pathname });
-      return json(res, 429, { ok: false, code: 'RATE_LIMITED', message: '请求过于频繁，请稍后再试。' });
+    // 限流（健康检查豁免，与历史行为一致；IP + token 双维度）
+    if (pathname !== '/codex/health' && this.security) {
+      const ip = getClientIp(req);
+      if (!this.security.rateLimitCheck(ip, getTokenFromRequest(req))) {
+        this.logger.warn('rate_limited', { ip, path: pathname });
+        return json(res, 429, { ok: false, code: 'RATE_LIMITED', message: '请求过于频繁，请稍后再试。' });
+      }
     }
 
-    // Try exact match and pattern match
+    // 1) 精确/正则路由
     const match = this._match(req.method, pathname) || this._match('*', pathname);
     if (match) {
       try {
         const result = await match.handler(req, res, match.params);
-        this.logger.logRequest(req, res.statusCode || 200, Date.now() - startTime);
+        this.logger.logRequest?.(req, res.statusCode || 200, Date.now() - startTime);
         return result;
       } catch (error) {
         this.logger.error('route_error', { path: pathname, error: error.message, stack: error.stack });
-        if (!res.headersSent) return json(res, error?.status || 500, { ok: false, code: error?.code || 'INTERNAL_ERROR', message: error.message || '服务器内部错误。' });
+        if (!res.headersSent) {
+          return json(res, error?.status || 500, { ok: false, code: error?.code || 'INTERNAL_ERROR', message: error.message || '服务器内部错误。' });
+        }
       }
       return;
     }
 
-    // Static files
-    return this._serveStatic(req, res, pathname);
+    // 2) 前缀路由（server.js API 表）
+    const prefixHandler = this._matchPrefix(req.method, pathname);
+    if (prefixHandler) {
+      try {
+        const result = await prefixHandler(req, res);
+        this.logger.logRequest?.(req, res.statusCode || 200, Date.now() - startTime);
+        return result;
+      } catch (error) {
+        this.logger.error('route_error', { path: pathname, error: error.message, stack: error.stack });
+        if (!res.headersSent) {
+          return json(res, error?.status || 500, { ok: false, code: error?.code || 'INTERNAL_ERROR', message: error.message || '服务器内部错误。' });
+        }
+      }
+      return;
+    }
+
+    // 3) 静态文件（GET/HEAD）
+    if (req.method === 'GET' || req.method === 'HEAD') {
+      if (this.staticHandler) return this.staticHandler(req, res);
+      return this._serveStatic(req, res, pathname);
+    }
+
+    // 4) 其余方法一律 405
+    return json(res, 405, { ok: false, code: 'METHOD_NOT_ALLOWED', message: 'Method not allowed' });
   }
 
+  // ---- 内置静态服务（未委托时使用）----
+
   _serveStatic(req, res, pathname) {
-    // Serve from public dir
     const filePath = path.join(this.publicDir, pathname === '/' ? 'index.html' : pathname);
     const safePath = path.normalize(filePath).replace(/\.\./g, '');
     if (!safePath.startsWith(this.publicDir)) {
@@ -269,7 +232,6 @@ class Router {
     }
     fs.readFile(safePath, (err, data) => {
       if (err) {
-        // Try dist dir for built assets
         const distPath = path.join(this.distDir, pathname);
         if (distPath.startsWith(this.distDir)) {
           fs.readFile(distPath, (err2, data2) => {
@@ -312,4 +274,4 @@ class Router {
   }
 }
 
-module.exports = { Router, json, readBody, getClientIp };
+module.exports = { Router, json, readBody, getClientIp, getTokenFromRequest, corsHeaders, displayPathName, existingProjectCwds };

@@ -55,6 +55,7 @@ import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanIntentResult
 import com.journeyapps.barcodescanner.ScanOptions
 import com.nhzhongguo.codexmax.R
+import com.nhzhongguo.codexmax.BuildConfig
 import com.nhzhongguo.codexmax.ScanActivity
 import com.nhzhongguo.codexmax.ui.state.ConnectionStateViewModel
 import com.nhzhongguo.codexmax.ui.theme.Background
@@ -162,6 +163,14 @@ fun ConnectionScreen(
                 isError = state.statusIsError,
             )
         }
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        // ---- Health card ----
+        HealthCard(
+            online = state.serverOnline,
+            version = BuildConfig.VERSION_NAME,
+        )
 
         Spacer(modifier = Modifier.height(14.dp))
 
@@ -426,6 +435,57 @@ private fun ManualConnectCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun HealthCard(online: Boolean?, version: String) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(SurfaceDeep)
+            .padding(15.dp),
+    ) {
+        Text(
+            text = stringResource(R.string.service_health_title),
+            style = MaterialTheme.typography.titleSmall,
+        )
+        Spacer(modifier = Modifier.height(3.dp))
+        Text(
+            text = stringResource(R.string.service_health_subtitle),
+            style = MaterialTheme.typography.bodySmall,
+            color = TextTertiary,
+        )
+        Spacer(modifier = Modifier.height(12.dp))
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            val (dotColor, labelRes) = when (online) {
+                true -> Color(0xFF34A853) to R.string.service_status_online
+                false -> MaterialTheme.colorScheme.error to R.string.service_status_offline
+                null -> TextTertiary to R.string.service_status_unknown
+            }
+            Box(
+                modifier = Modifier
+                    .size(10.dp)
+                    .clip(RoundedCornerShape(5.dp))
+                    .background(dotColor),
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = stringResource(labelRes),
+                style = MaterialTheme.typography.labelLarge,
+                color = dotColor,
+            )
+            Spacer(modifier = Modifier.weight(1f))
+            Text(
+                text = "${stringResource(R.string.app_version_label)} v$version",
+                style = MaterialTheme.typography.labelSmall,
+                color = TextTertiary,
+            )
         }
     }
 }

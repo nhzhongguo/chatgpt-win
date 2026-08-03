@@ -54,4 +54,10 @@
     <string name="tap_to_open">Tap to return to ChatGPT AZ</string>
     <string name="update_available">A new version v%1$s is available. Download it now?</string>
     <string name="update_download">Download</string>
+    <string name="service_health_title">Service health check</string>
+    <string name="service_health_subtitle">Automatically checks your computer service every 15 minutes</string>
+    <string name="service_status_online">Computer service online</string>
+    <string name="service_status_offline">Computer service offline</string>
+    <string name="service_status_unknown">Not checked yet</string>
+    <string name="app_version_label">Version</string>
 </resources>

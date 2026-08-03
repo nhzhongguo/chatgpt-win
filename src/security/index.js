@@ -63,18 +63,29 @@ class Security {
 
   // ---- Rate Limiting ----
 
-  rateLimitCheck(ip) {
+  /**
+   * 双维度限流：IP 与 token 各维护独立令牌桶，任一维度超限即拒绝。
+   * @param {string} ip 客户端 IP
+   * @param {string} [token] 鉴权 token（可选，命中则额外按 token 维度计数）
+   */
+  rateLimitCheck(ip, token = '') {
+    if (!ip) return false; // 无法确定来源的请求直接拒绝
+    const keys = [ip];
+    if (token) keys.push(`token:${token}`);
     const now = Date.now();
-    let bucket = this.rateLimitBuckets.get(ip);
-    if (!bucket || now - bucket.resetAt >= 60000) {
-      bucket = { tokens: this.RATE_LIMIT_BURST, resetAt: now + 60000 };
-      this.rateLimitBuckets.set(ip, bucket);
+    for (const key of keys) {
+      let bucket = this.rateLimitBuckets.get(key);
+      if (!bucket || now - bucket.resetAt >= 60000) {
+        bucket = { tokens: this.RATE_LIMIT_BURST, resetAt: now + 60000 };
+        this.rateLimitBuckets.set(key, bucket);
+      }
+      if (bucket.tokens > 0) {
+        bucket.tokens -= 1;
+      } else {
+        return false;
+      }
     }
-    if (bucket.tokens > 0) {
-      bucket.tokens -= 1;
-      return true;
-    }
-    return false;
+    return true;
   }
 
   _cleanupRateLimit() {

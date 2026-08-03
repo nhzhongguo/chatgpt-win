@@ -1,5 +1,27 @@
 # Changelog
 
+# 4.0.0 (2026-08-02)
+
+- Feat: 路由分发中枢 - server.js 的 if 链替换为 Router 模块（精确/前缀/静态/405 统一分发）
+- Feat: CDP WebSocket 长连接 - 持久连接 + 心跳 + 断线重连 + 状态推送（ws-hub）
+- Feat: SQLite 持久化操作队列 - 操作队列/执行日志持久化（better-sqlite3 可选，JSON 回退）
+- Feat: SQLite 队列接入业务 - 发送/Git 操作/定时任务执行均写入执行日志
+- Feat: Android Jetpack Compose UI 重写 - Material 3 + StateFlow + ViewModel
+- Feat: cron 表达式定时任务 - 5 字段解析、L 修饰符、中文描述、重试策略
+- Feat: 真实行为测试 - Router/Security/PersistentQueue/CronParser/Certificate 行为级测试
+- Security: CORS 收紧 - Origin 回环/同源白名单校验，拒绝未知跨站来源
+- Security: CSP 安全头 - script/style/img/connect 限制 + frame-ancestors + nosniff + referrer-policy
+- Security: 限流双维度 - IP 与 token 独立令牌桶，任一维度超限即拒绝
+- Security: 证书纯 Node 生成 - 手工 X.509 DER 构造 CA 根 + 服务器证书链，TLS 握手验证通过（OpenSSL 仅兜底）
+- Perf: 静态资源 LRU 内存缓存 - 高频页面/图标免重复读盘（256KB/200 项自动淘汰）
+- Perf: Android WorkManager - 周期 15 分钟后台健康检查，连接页展示在线/离线状态
+- UI: Android 服务健康卡片 - 在线状态指示 + 版本号显示
+- UI: PWA 离线支持 - service worker 网络优先缓存（manifest 已有）
+- Feat: 执行统计 API - /codex/stats 聚合队列/成功率/操作分布/时间范围
+- Feat: Webhook 通知 - 配置 URL，发送成功/失败时 POST 事件（可关闭）
+- Chore: 四端统一版本号 v4.0.0（Windows/macOS/Android/服务端）
+- Chore: 版本升级至 v4.0.0
+
 # 3.2.0 (2026-08-02)
 
 - Feat: 模块化架构拆分 - server.js 拆分为独立模块（store/security/logger/scheduler/codex-parser/routes）

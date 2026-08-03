@@ -21,7 +21,7 @@ const { Scheduler, normalizeScheduledTask, normalizeScheduledTasks, createSchedu
 const { CronParser } = require('./src/scheduler/cron');
 const { CodexSessionParser } = require('./src/codex/session-parser');
 const { CdpWebSocketHub } = require('./src/cdp/ws-hub');
-const { Router, getClientIp } = require('./src/routes');
+const { Router, getClientIp, corsHeaders } = require('./src/routes');
 // json 和 readBody 使用 server.js 本地定义（包含 CORS 头和超时处理）
 
 const APP_NAME = process.env.CODEX_MAX_APP_NAME || process.env.CODEX_MINI_APP_NAME || 'ChatGPT Win';
@@ -89,9 +89,14 @@ const store = new Store({ stateDir: STATE_DIR, stateFile: STATE_FILE, tokenFile:
 const security = new Security({ initialToken: TOKEN, appName: APP_NAME, store });
 const logger = defaultLogger;
 const parser = new CodexSessionParser({ store });
-const scheduler = new Scheduler({ store, codexAppServer, logger });
-const certManager = new CertificateManager();
 const persistentQueue = new PersistentQueue({ logger });
+const scheduler = new Scheduler({
+  store,
+  codexAppServer,
+  logger,
+  logExecution: (threadId, action, status, durationMs, error, detail) => persistentQueue.logExecution(threadId, action, status, durationMs, error, detail),
+});
+const certManager = new CertificateManager();
 const cdpWsHub = new CdpWebSocketHub({ security, logger });
 
 const CODEX_SESSIONS_DIR = path.join(os.homedir(), '.codex', 'sessions');
@@ -150,17 +155,7 @@ const DESKTOP_MODEL_OPTIONS = [
 ];
 const recentSendRequests = new Map();
 let lastCodexThreadActivation = { threadId: '', at: 0 };
-// ----- Simple in-memory token bucket rate limiter -----
-const RATE_LIMIT_RPM = Math.max(10, Math.min(6000, Number(process.env.CODEX_MAX_RATE_LIMIT_RPM) || 120));
-const RATE_LIMIT_BURST = Math.max(1, Math.min(100, Math.floor(RATE_LIMIT_RPM / 6) || 20));
-const rateLimitBuckets = new Map();
-const RATE_LIMIT_CLEANUP_INTERVAL = 60000;
-
-function rateLimitCheck(ip) {
-  return security.rateLimitCheck(ip);
-}
-
-// 注：rate limiter 清理已由 Security 模块内部管理
+// 注：限流（token bucket）已由 Security 模块（src/security/index.js）统一管理
 // -----------------------------------------------------
 let codexSessionFilesCache = { at: 0, files: [] };
 let threadIndexCache = { mtimeMs: 0, size: 0, byId: null };
@@ -1787,6 +1782,14 @@ async function handleGitAction(req, res) {
     return json(res, 400, { ok: false, code: 'BAD_GIT_ACTION', message: '不支持的 Git 操作。' });
   }
 
+  const startedAt = Date.now();
+  const logGit = (status, errorText = '', detail = {}) => {
+    try {
+      persistentQueue.logExecution('', `git_${action}`, status, Date.now() - startedAt, errorText, detail);
+    } catch {}
+  };
+  const gitDetail = () => ({ cwd: payload.cwd || '', branch: payload.branch || '', message: String(payload.message || '').slice(0, 200) });
+
   try {
     const target = await resolveGitActionTarget(payload.cwd);
     const root = target.root;
@@ -1802,6 +1805,7 @@ async function handleGitAction(req, res) {
         throw gitActionError('只能切换到已存在的本地分支。', 'GIT_BRANCH_NOT_FOUND', 400);
       }
       if (branch === currentBranch) {
+        logGit('completed', '', { branch, gitDetail: gitDetail() });
         return json(res, 200, { ok: true, action, branch, environment: target.environment, message: '当前已经在这个分支上。' });
       }
       const status = await runLocalCommand('git', ['-C', root, 'status', '--porcelain'], { timeoutMs: 8000 });
@@ -1810,6 +1814,7 @@ async function handleGitAction(req, res) {
       }
       await runLocalCommand('git', ['-C', root, 'switch', '--quiet', '--', branch], { timeoutMs: 15000 });
       const environment = await readGitEnvironment(target.cwd);
+      logGit('completed', '', { branch, gitDetail: gitDetail() });
       return json(res, 200, { ok: true, action, branch, environment, message: `已切换到 ${branch}。` });
     }
 
@@ -1822,6 +1827,8 @@ async function handleGitAction(req, res) {
       await runLocalCommand('git', ['-C', root, 'add', '--all'], { timeoutMs: 20000 });
       const commit = await runLocalCommand('git', ['-C', root, 'commit', '-m', message], { timeoutMs: 30000 });
       const environment = await readGitEnvironment(target.cwd);
+      const hash = String(commit.stdout || '').match(/\[[^\]]+ ([a-f0-9]{7,})\]/)?.[1] || '';
+      logGit('completed', '', { commitHash: hash, gitDetail: gitDetail() });
       return json(res, 200, {
         ok: true,
         action,
@@ -1841,6 +1848,7 @@ async function handleGitAction(req, res) {
     }
     const push = await runLocalCommand('git', ['-C', root, 'push'], { timeoutMs: 60000 });
     const environment = await readGitEnvironment(target.cwd);
+    logGit('completed', '', { remote: target.environment.git.remote, gitDetail: gitDetail() });
     return json(res, 200, {
       ok: true,
       action,
@@ -1849,6 +1857,7 @@ async function handleGitAction(req, res) {
       message: '已推送当前分支。',
     });
   } catch (error) {
+    logGit('failed', error?.message || 'Git 操作失败。', { code: error?.code || 'GIT_ACTION_FAILED', gitDetail: gitDetail() });
     return json(res, error?.status || 500, {
       ok: false,
       code: error?.code || 'GIT_ACTION_FAILED',
@@ -3040,7 +3049,7 @@ const mimeTypes = {
 function json(res, status, data) {
   const body = JSON.stringify(data);
   res.writeHead(status, {
-    ...corsHeaders(),
+    ...(res._corsHeaders || corsHeaders()),
     'content-type': 'application/json; charset=utf-8',
     'cache-control': 'no-store',
     'content-length': Buffer.byteLength(body),
@@ -3048,17 +3057,9 @@ function json(res, status, data) {
   res.end(body);
 }
 
-function corsHeaders() {
-  return {
-    'access-control-allow-origin': '*',
-    'access-control-allow-methods': 'GET,POST,OPTIONS',
-    'access-control-allow-headers': 'content-type,x-mobile-typer-token',
-    'access-control-allow-private-network': 'true',
-  };
-}
-
-function options(res) {
-  res.writeHead(204, corsHeaders());
+// CORS 安全头计算已提取到 src/routes/corsHeaders（server.js 直接复用）
+function options(req, res) {
+  res.writeHead(204, corsHeaders(req));
   res.end();
 }
 
@@ -4245,13 +4246,22 @@ async function handleSend(req, res) {
         result,
       });
     }
+    persistentQueue.logExecution(effectiveThreadId, 'send', 'completed', 0, '', { transport: result.transport, sentAt: result.sentAt });
+    fireWebhook('send.completed', { threadId: effectiveThreadId || '', target, transport: result.transport });
     return json(res, 200, result);
   } catch (error) {
     if (clientRequestId) recentSendRequests.delete(clientRequestId);
     const explained = explainTargetError(error, target);
+    persistentQueue.logExecution(effectiveThreadId || '', 'send', 'failed', 0, explained.message || error.message || String(error), {});
+    fireWebhook('send.failed', { threadId: effectiveThreadId || '', target, error: explained.message || error.message || String(error) });
     return json(res, 500, { ok: false, ...explained });
   }
 }
+
+// 静态资源 LRU 内存缓存（避免高频页面/图标重复读盘；超过 256KB 或 200 项自动淘汰）
+const staticFileCache = new Map();
+const STATIC_CACHE_MAX_ITEMS = 200;
+const STATIC_CACHE_MAX_BYTES = 256 * 1024;
 
 function serveStatic(req, res) {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
@@ -4261,27 +4271,63 @@ function serveStatic(req, res) {
   const filePath = path.normalize(path.join(PUBLIC_DIR, pathname));
   const relative = path.relative(PUBLIC_DIR, filePath);
   if (relative.startsWith('..') || path.isAbsolute(relative)) {
-    res.writeHead(403);
+    res.writeHead(403, { 'x-content-type-options': 'nosniff' });
     return res.end('Forbidden');
+  }
+
+  const ext = path.extname(filePath);
+  const cacheKey = filePath;
+  let stat = null;
+  try { stat = fs.statSync(filePath); } catch {}
+
+  // 命中缓存（mtime 与 size 未变则直接复用内存数据）
+  if (stat && stat.isFile() && stat.size <= STATIC_CACHE_MAX_BYTES) {
+    const cached = staticFileCache.get(cacheKey);
+    if (cached && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size) {
+      staticFileCache.delete(cacheKey); // LRU：移到末尾
+      staticFileCache.set(cacheKey, cached);
+      const headers = staticHeaders(ext, url, stat.size, cached.data.length);
+      res.writeHead(200, headers);
+      res.end(req.method === 'HEAD' ? undefined : cached.data);
+      return;
+    }
   }
 
   fs.readFile(filePath, (error, data) => {
     if (error) {
-      res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
+      res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8', 'x-content-type-options': 'nosniff' });
       return res.end('Not found');
     }
-    const ext = path.extname(filePath);
-    const headers = {
-      'content-type': mimeTypes[ext] || 'application/octet-stream',
-      'cache-control': ext === '.html' ? 'no-store' : 'public, max-age=3600',
-      'content-length': data.length,
-    };
-    if (ext === '.html' && url.searchParams.get('token') === TOKEN) {
-      headers['set-cookie'] = `codexMiniToken=${encodeURIComponent(TOKEN)}; Path=/; SameSite=Lax; Max-Age=31536000`;
+    // 可缓存的小文件写入 LRU
+    if (stat && stat.isFile() && data.length <= STATIC_CACHE_MAX_BYTES) {
+      if (staticFileCache.size >= STATIC_CACHE_MAX_ITEMS) {
+        staticFileCache.delete(staticFileCache.keys().next().value);
+      }
+      staticFileCache.set(cacheKey, { data, mtimeMs: stat.mtimeMs, size: stat.size });
     }
+    const headers = staticHeaders(ext, url, data.length, data.length);
     res.writeHead(200, headers);
     res.end(req.method === 'HEAD' ? undefined : data);
   });
+}
+
+function staticHeaders(ext, url, contentLength, dataLength) {
+  const headers = {
+    'content-type': mimeTypes[ext] || 'application/octet-stream',
+    'cache-control': ext === '.html' ? 'no-store' : 'public, max-age=3600',
+    'content-length': dataLength,
+    'x-content-type-options': 'nosniff',
+    'referrer-policy': 'no-referrer',
+  };
+  if (ext === '.html') {
+    headers['x-frame-options'] = 'DENY';
+    // 单文件前端使用内联脚本/样式，CSP 限制外部资源加载与 iframe 嵌套
+    headers['content-security-policy'] = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ws: wss:; font-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'";
+  }
+  if (ext === '.html' && url.searchParams.get('token') === TOKEN) {
+    headers['set-cookie'] = `codexMiniToken=${encodeURIComponent(TOKEN)}; Path=/; SameSite=Lax; Max-Age=31536000`;
+  }
+  return headers;
 }
 
 function parseVersionParts(version) {
@@ -4572,45 +4618,145 @@ function handleHistoryAttachment(req, res) {
   }
 }
 
-// ===== HTTP/HTTPS 服务器创建 =====
-const requestHandler = (req, res) => {
-  const startTime = Date.now();
-  if (req.method === 'OPTIONS') return options(res);
-  // Rate limiting - skip for health check
-  if (!req.url.startsWith('/codex/health')) {
-    const clientIp = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket?.remoteAddress || 'unknown';
-    if (!rateLimitCheck(clientIp)) {
-      res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': '60' });
-      return res.end(JSON.stringify({ error: 'rate_limit_exceeded', message: '请求过于频繁，请稍后再试。' }));
+// ===== 执行统计与 Webhook 通知 =====
+
+function normalizeLogRow(row = {}) {
+  return {
+    threadId: row.thread_id ?? row.threadId ?? '',
+    action: row.action ?? '',
+    status: row.status ?? '',
+    durationMs: row.duration_ms ?? row.durationMs ?? 0,
+    error: row.error ?? '',
+    createdAt: row.created_at ?? row.createdAt ?? '',
+  };
+}
+
+async function handleStats(req, res) {
+  if (!isAuthorized(req)) return json(res, 401, { ok: false, code: 'UNAUTHORIZED', message: '访问令牌不正确。' });
+  try {
+    const logs = (persistentQueue.getLogs(1000) || []).map(normalizeLogRow);
+    const now = Date.now();
+    const dayStart = new Date(now - 24 * 3600 * 1000).toISOString();
+    const weekStart = new Date(now - 7 * 24 * 3600 * 1000).toISOString();
+
+    let completed = 0;
+    let failed = 0;
+    const byAction = {};
+    let todayCount = 0;
+    let weekCount = 0;
+    for (const log of logs) {
+      const time = Date.parse(log.createdAt);
+      if (log.status === 'completed') completed += 1;
+      if (log.status === 'failed') failed += 1;
+      byAction[log.action] = (byAction[log.action] || 0) + 1;
+      if (time >= Date.parse(dayStart)) todayCount += 1;
+      if (time >= Date.parse(weekStart)) weekCount += 1;
     }
+
+    const successRate = completed + failed > 0 ? Math.round((completed / (completed + failed)) * 1000) / 10 : 0;
+    return json(res, 200, {
+      ok: true,
+      queue: persistentQueue.getQueueStatus(),
+      totals: { total: logs.length, completed, failed, successRate },
+      timeRange: { today: todayCount, week: weekCount },
+      byAction,
+      recent: logs.slice(0, 20),
+    });
+  } catch (error) {
+    return json(res, 500, { ok: false, code: 'STATS_FAILED', message: error.message || '统计失败。' });
   }
-  if (req.method === 'GET' && req.url.startsWith('/codex/health')) return handleHealth(req, res);
-  if (req.method === 'POST' && req.url.startsWith('/codex/rotate-token')) return handleRotateToken(req, res);
-  if (req.method === 'GET' && req.url.startsWith('/codex/download')) return handleDownload(req, res);
-  if (req.method === 'GET' && req.url.startsWith('/codex/attachment')) return handleHistoryAttachment(req, res);
-  if (req.method === 'GET' && req.url.startsWith('/codex/config')) return handleClientConfig(req, res);
-  if (req.method === 'GET' && req.url.startsWith('/codex/environment')) return handleEnvironment(req, res);
-  if (req.method === 'POST' && req.url.startsWith('/codex/git-action')) return handleGitAction(req, res);
-  if (req.method === 'POST' && req.url.startsWith('/codex/cdp-launch')) return handleCdpLaunch(req, res);
-  if (req.method === 'POST' && req.url.startsWith('/send')) return handleSend(req, res);
-  if (req.method === 'GET' && req.url.startsWith('/codex/threads')) return handleThreads(req, res);
-  if (req.method === 'GET' && req.url.startsWith('/codex/archived')) return handleArchivedThreads(req, res);
-  if (req.method === 'GET' && req.url.startsWith('/codex/pull-requests')) return handlePullRequests(req, res);
-  if (req.method === 'GET' && req.url.startsWith('/codex/plugins')) return handlePlugins(req, res);
-  if ((req.method === 'GET' || req.method === 'POST') && req.url.startsWith('/codex/schedules')) return handleSchedules(req, res);
-  if (req.method === 'GET' && req.url.startsWith('/codex/history')) return handleThreadHistory(req, res);
-  if (req.method === 'GET' && req.url.startsWith('/codex/approvals')) return handleCodexApprovals(req, res);
-  if (req.method === 'POST' && req.url.startsWith('/codex/approval')) return handleCodexApproval(req, res);
-  if (req.method === 'GET' && req.url.startsWith('/codex/status')) return handleCodexStatus(req, res);
-  if ((req.method === 'GET' || req.method === 'POST') && req.url.startsWith('/codex/keep-awake')) return handleKeepAwake(req, res);
-  if (req.method === 'POST' && req.url.startsWith('/codex/select')) return handleSelectThread(req, res);
-  if (req.method === 'POST' && req.url.startsWith('/codex/new-thread')) return handleNewCodexThread(req, res);
-  if (req.method === 'POST' && req.url.startsWith('/codex/thread-action')) return handleThreadAction(req, res);
-  if (req.method === 'POST' && req.url.startsWith('/codex/model-switch')) return handleModelSwitch(req, res);
-  if (req.method === 'POST' && req.url.startsWith('/codex/reasoning-mode')) return handleReasoningMode(req, res);
-  if (req.method === 'POST' && req.url.startsWith('/codex/stop')) return handleStopCodex(req, res);
-  if (req.method === 'GET' || req.method === 'HEAD') return serveStatic(req, res);
-  json(res, 405, { ok: false, code: 'METHOD_NOT_ALLOWED', message: 'Method not allowed' });
+}
+
+async function handleWebhook(req, res) {
+  if (!isAuthorized(req)) return json(res, 401, { ok: false, code: 'UNAUTHORIZED', message: '访问令牌不正确。' });
+  if (req.method === 'GET') {
+    const state = store.readState();
+    return json(res, 200, { ok: true, webhook: state.webhook || '', enabled: Boolean(state.webhook) });
+  }
+  if (req.method === 'POST') {
+    let payload = {};
+    try {
+      payload = JSON.parse(await readBody(req) || '{}');
+    } catch (error) {
+      return json(res, 400, { ok: false, code: 'BAD_REQUEST', message: error.message || '请求格式不正确。' });
+    }
+    const url = String(payload.url || '').trim();
+    if (url && !/^https?:\/\//i.test(url)) {
+      return json(res, 400, { ok: false, code: 'BAD_WEBHOOK_URL', message: 'Webhook 地址必须以 http(s):// 开头。' });
+    }
+    const state = store.readState();
+    state.webhook = url;
+    store.writeState(state);
+    logger.info('webhook_updated', { enabled: Boolean(url) });
+    return json(res, 200, { ok: true, webhook: url, enabled: Boolean(url), message: url ? '已启用 Webhook 通知。' : '已关闭 Webhook 通知。' });
+  }
+  return json(res, 405, { ok: false, code: 'METHOD_NOT_ALLOWED', message: 'Method not allowed' });
+}
+
+function fireWebhook(event, payload = {}) {
+  const webhook = store.readState().webhook;
+  if (!webhook) return;
+  const httpModule = webhook.startsWith('https:') ? require('https') : require('http');
+  const body = JSON.stringify({ event, ...payload, ts: new Date().toISOString() });
+  const request = httpModule.request(webhook, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body), 'user-agent': `${APP_NAME}/4.0` },
+    timeout: 5000,
+  }, response => {
+    response.resume();
+  });
+  request.on('timeout', () => request.destroy());
+  request.on('error', () => {});
+  request.end(body);
+}
+
+// ===== HTTP/HTTPS 服务器创建 =====
+// v4.0.0：所有 API 路由集中为路由表，由 Router 统一分发（替换手动 if 链）
+const apiRouteTable = [
+  { method: 'GET', prefix: '/codex/health', handler: handleHealth },
+  { method: 'POST', prefix: '/codex/rotate-token', handler: handleRotateToken },
+  { method: 'GET', prefix: '/codex/download', handler: handleDownload },
+  { method: 'GET', prefix: '/codex/attachment', handler: handleHistoryAttachment },
+  { method: 'GET', prefix: '/codex/config', handler: handleClientConfig },
+  { method: 'GET', prefix: '/codex/environment', handler: handleEnvironment },
+  { method: 'POST', prefix: '/codex/git-action', handler: handleGitAction },
+  { method: 'POST', prefix: '/codex/cdp-launch', handler: handleCdpLaunch },
+  { method: 'POST', prefix: '/send', handler: handleSend },
+  { method: 'GET', prefix: '/codex/threads', handler: handleThreads },
+  { method: 'GET', prefix: '/codex/archived', handler: handleArchivedThreads },
+  { method: 'GET', prefix: '/codex/pull-requests', handler: handlePullRequests },
+  { method: 'GET', prefix: '/codex/plugins', handler: handlePlugins },
+  { method: '*', prefix: '/codex/schedules', handler: handleSchedules },
+  { method: 'GET', prefix: '/codex/history', handler: handleThreadHistory },
+  { method: 'GET', prefix: '/codex/approvals', handler: handleCodexApprovals },
+  { method: 'POST', prefix: '/codex/approval', handler: handleCodexApproval },
+  { method: 'GET', prefix: '/codex/status', handler: handleCodexStatus },
+  { method: '*', prefix: '/codex/keep-awake', handler: handleKeepAwake },
+  { method: 'POST', prefix: '/codex/select', handler: handleSelectThread },
+  { method: 'POST', prefix: '/codex/new-thread', handler: handleNewCodexThread },
+  { method: 'POST', prefix: '/codex/thread-action', handler: handleThreadAction },
+  { method: 'POST', prefix: '/codex/model-switch', handler: handleModelSwitch },
+  { method: 'POST', prefix: '/codex/reasoning-mode', handler: handleReasoningMode },
+  { method: 'POST', prefix: '/codex/stop', handler: handleStopCodex },
+  { method: 'GET', prefix: '/codex/stats', handler: handleStats },
+  { method: '*', prefix: '/codex/webhook', handler: handleWebhook },
+];
+
+const router = new Router({
+  logger,
+  security,
+  staticHandler: serveStatic,
+  publicDir: PUBLIC_DIR,
+  distDir: DIST_DIR,
+  serviceVersion: SERVICE_VERSION,
+});
+router.registerPrefixRoutes(apiRouteTable);
+
+const requestHandler = (req, res) => {
+  // 预先按请求计算 CORS 安全头，供 json() 响应复用（回显合法 Origin，拒绝未知来源）
+  res._corsHeaders = corsHeaders(req);
+  if (req.method === 'OPTIONS') return options(req, res);
+  return router.dispatch(req, res);
 };
 
 // HTTPS 证书管理

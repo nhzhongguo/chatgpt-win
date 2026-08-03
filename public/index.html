@@ -3273,6 +3273,11 @@
   </div>
 
   <script>
+    // PWA 离线缓存（网络优先，失败回退缓存）
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js').catch(() => {});
+    }
+
     const thread = document.getElementById('thread');
     const composerShell = document.querySelector('.composer-shell');
     const topbar = document.querySelector('.topbar');
