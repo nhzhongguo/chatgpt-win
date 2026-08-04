@@ -1286,6 +1286,75 @@
     }
     .speak-btn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
     .speak-btn.is-speaking { color: #ff5d5d; background: rgba(255, 93, 93, .14); }
+    .message-lightbox {
+      position: fixed;
+      z-index: 210;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      background: rgba(0,0,0,.82);
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
+      cursor: zoom-out;
+      opacity: 0;
+      transition: opacity .18s ease;
+    }
+    .message-lightbox.is-open { opacity: 1; }
+    .message-lightbox img {
+      max-width: 92vw;
+      max-height: 88vh;
+      border-radius: 8px;
+      box-shadow: 0 20px 60px rgba(0,0,0,.52);
+      object-fit: contain;
+    }
+
+    .message-context-scrim {
+      position: fixed;
+      z-index: 190;
+      inset: 0;
+      background: transparent;
+      touch-action: none;
+    }
+    .message-context-menu {
+      position: fixed;
+      z-index: 200;
+      display: grid;
+      min-width: 140px;
+      padding: 6px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: #202020;
+      box-shadow: 0 12px 40px rgba(0,0,0,.48);
+      opacity: 0;
+      transform: scale(.92);
+      transition: opacity .12s ease, transform .12s ease;
+      pointer-events: none;
+    }
+    .message-context-menu.is-open {
+      opacity: 1;
+      transform: scale(1);
+      pointer-events: auto;
+    }
+    .message-context-item {
+      appearance: none;
+      border: 0;
+      border-radius: 10px;
+      background: transparent;
+      color: #f4f4f5;
+      font: inherit;
+      font-size: 14px;
+      padding: 10px 14px;
+      text-align: left;
+      cursor: pointer;
+      touch-action: manipulation;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .message-context-item:active { background: rgba(255,255,255,.10); }
+    .message-context-item.is-danger { color: #ff6b6b; }
+    .message-context-item svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; flex: 0 0 auto; }
+
     .bubble {
       color: var(--text);
       font-size: 15px;
@@ -3341,6 +3410,10 @@
 
     <div class="notice-pill" id="notice" role="status" aria-live="polite"></div>
     <div class="approval-scrim" id="approval-scrim" aria-hidden="true" hidden></div>
+  <div class="message-context-scrim" id="message-context-scrim" aria-hidden="true" hidden></div>
+  <div class="message-context-menu" id="message-context-menu" role="menu" hidden></div>
+  <div class="message-lightbox" id="message-lightbox" hidden><img id="message-lightbox-img" src="" alt="" /></div>
+
     <section class="approval-sheet" id="approval-sheet" role="dialog" aria-modal="true" aria-labelledby="approval-title" aria-describedby="approval-summary" hidden>
       <div class="approval-heading">
         <h2 id="approval-title">需要确认</h2>
@@ -3513,6 +3586,12 @@
     const promptLibraryTitle = document.getElementById('prompt-library-title');
     const promptLibraryText = document.getElementById('prompt-library-text');
     const promptLibraryForm = document.getElementById('prompt-library-form');
+    const messageContextScrim = document.getElementById('message-context-scrim');
+    const messageContextMenu = document.getElementById('message-context-menu');
+    const messageLightbox = document.getElementById('message-lightbox');
+    const messageLightboxImg = document.getElementById('message-lightbox-img');
+
+
     const slashCommandMenu = document.getElementById('slash-command-menu');
     const routeBadge = document.getElementById('route-badge');
     const routeIcon = document.getElementById('route-icon');
@@ -4578,7 +4657,8 @@
         renderApprovalSheet();
       } catch (error) {
         if (!options.quiet) console.warn('ChatGPT Win approval refresh skipped:', error);
-      } finally {
+        if (!options.quiet) setTopStatus('已连接');
+  } finally {
         approvalRefreshBusy = false;
       }
     }
@@ -5395,12 +5475,25 @@
       if (await probeApiCandidate(active, 700)) return;
       await chooseApiCandidate({ preferLocal: false, excludeBase: active.baseUrl, quiet: true, probeTimeoutMs: 900 });
     }
-    function startRouteMonitor() {
+        function startRouteMonitor() {
+      let reconnectingSince = 0;
       window.setInterval(async () => {
-        if (document.hidden || routeMonitorBusy) return;
+        if (routeMonitorBusy) return;
         routeMonitorBusy = true;
         const active = apiCandidates.find(item => item.baseUrl === activeApiBase);
+        const isCurrentlyOffline = activeRouteState === 'offline' || activeRouteState === 'connecting';
         try {
+          if (isCurrentlyOffline) {
+            if (!reconnectingSince) reconnectingSince = Date.now();
+            setTopStatus('正在重连…', 'reconnecting');
+            setRouteState('connecting', { error: '' });
+            if (await chooseApiCandidate({ preferLocal: true, quiet: true, probeTimeoutMs: 1800 })) {
+              reconnectingSince = 0;
+              setTopStatus('已连接', '');
+            }
+            return;
+          }
+          reconnectingSince = 0;
           if (active?.kind === 'local') {
             if (await probeApiCandidate(active, 900)) return;
             await chooseApiCandidate({ preferLocal: false, excludeBase: active.baseUrl, quiet: true, probeTimeoutMs: 900 });
@@ -5410,7 +5503,7 @@
         } finally {
           routeMonitorBusy = false;
         }
-      }, 5000);
+      }, isCurrentlyOffline ? 2500 : 5000);
     }
     function scrollBottom(options = {}) {
       const apply = () => {
@@ -6311,6 +6404,7 @@
         if (!source) continue;
         const img = document.createElement('img');
         img.className = 'attachment-preview';
+        img.addEventListener('click', event => { event.stopPropagation(); openImageLightbox(source); });
         const imageUrl = new URL(source, location.href);
         if (imageUrl.origin === location.origin) imageUrl.searchParams.set('token', token);
         img.src = imageUrl.toString();
@@ -6346,10 +6440,159 @@
       article.appendChild(wrap);
       thread.appendChild(article);
       if (!options.skipScroll) scrollBottom();
+      wireMessageContextMenu(article, bubble, role);
       return { article, bubble, meta, role };
     }
 
-    function addDetails(message, steps = []) {
+    
+    let currentContextArticle = null;
+    function openMessageContextMenu(article, bubble, role) {
+      closeMessageContextMenu();
+      if (!article || !messageContextMenu || !messageContextScrim) return;
+      currentContextArticle = article;
+      const rect = bubble.getBoundingClientRect();
+      const items = [];
+      items.push({
+        label: '复制',
+        svg: '<svg viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 10h6M9 14h4"/></svg>',
+        action: () => {
+          const text = safeBubbleText(article);
+          if (text) navigator.clipboard.writeText(text).catch(() => {});
+          setNotice('已复制消息文本', 'ok');
+        },
+      });
+      if (role === 'user') {
+        items.push({
+          label: '编辑',
+          svg: '<svg viewBox="0 0 24 24"><path d="M17 3a2.8 2.8 0 0 1 4 4L8 20l-4 1 1-4Z"/></svg>',
+          action: () => {
+            const text = safeBubbleText(article);
+            textarea.value = text;
+            autosize();
+            textarea.focus();
+            closeMessageContextMenu();
+          },
+        });
+        items.push({
+          label: '重新发送',
+          svg: '<svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 9-9 9 9 0 0 1 9 9 9 9 0 0 1-9 9 9 9 0 0 1-8-5"/><path d="M3 12V7l5 2.5Z"/></svg>',
+          action: () => {
+            const text = safeBubbleText(article);
+            article.remove();
+            serializeMessages();
+            closeMessageContextMenu();
+            if (text) sendText({ text });
+          },
+        });
+        items.push({
+          label: '删除',
+          svg: '<svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-12M9 7V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v3"/></svg>',
+          action: () => {
+            article.remove();
+            serializeMessages();
+            closeMessageContextMenu();
+          },
+          danger: true,
+        });
+      }
+            const btnHtml = items.map(item => {
+        const cls = "message-context-item" + (item.danger ? " is-danger" : "");
+        return "<button class=\"" + cls + "\" type=\"button\">" + item.svg + "<span>" + item.label + "</span></button>";
+      }).join('');
+      messageContextMenu.innerHTML = btnHtml;
+      messageContextMenu.querySelectorAll('.message-context-item').forEach((btn, index) => {
+        btn.addEventListener('click', event => {
+          event.stopPropagation();
+          items[index].action();
+        });
+      });
+      let left = Math.round(rect.left);
+      let top = Math.round(rect.bottom + 4);
+      const menuW = Math.min(180, window.innerWidth - 24);
+      if (left + menuW > window.innerWidth - 8) left = window.innerWidth - 8 - menuW;
+      if (left < 8) left = 8;
+      messageContextMenu.style.minWidth = menuW + 'px';
+      messageContextMenu.style.left = left + 'px';
+      messageContextMenu.style.top = top + 'px';
+      messageContextMenu.classList.add('is-open');
+      messageContextMenu.hidden = false;
+      messageContextScrim.hidden = false;
+    }
+    function closeMessageContextMenu() {
+      currentContextArticle = null;
+      if (messageContextMenu) {
+        messageContextMenu.classList.remove('is-open');
+        messageContextMenu.hidden = true;
+      }
+      if (messageContextScrim) messageContextScrim.hidden = true;
+    }
+    function wireMessageContextMenu(article, bubble, role) {
+      if (role !== 'user' && role !== 'assistant') return;
+      article.style.touchAction = 'manipulation';
+      let timer = 0;
+      let startPoint = null;
+      let longPressOpened = false;
+      const cancelTimer = () => { window.clearTimeout(timer); timer = 0; };
+      const onPointerDown = event => {
+        if (event.button > 0) return;
+        startPoint = { x: event.clientX || 0, y: event.clientY || 0 };
+        longPressOpened = false;
+        cancelTimer();
+        timer = window.setTimeout(() => {
+          longPressOpened = true;
+          vibrateForLongPress();
+          openMessageContextMenu(article, bubble, role);
+        }, 560);
+      };
+      const onPointerMove = event => {
+        if (!startPoint) return;
+        const dx = Math.abs((event.clientX || 0) - startPoint.x);
+        const dy = Math.abs((event.clientY || 0) - startPoint.y);
+        if (dx > 10 || dy > 10) cancelTimer();
+      };
+      const onPointerUp = () => { cancelTimer(); startPoint = null; };
+      const onPointerCancel = () => { cancelTimer(); startPoint = null; };
+      article.addEventListener('pointerdown', onPointerDown);
+      article.addEventListener('pointermove', onPointerMove);
+      article.addEventListener('pointerup', onPointerUp);
+      article.addEventListener('pointercancel', onPointerCancel);
+      article.addEventListener('contextmenu', event => {
+        event.preventDefault();
+        cancelTimer();
+        startPoint = null;
+        longPressOpened = false;
+        vibrateForLongPress();
+        openMessageContextMenu(article, bubble, role);
+      });
+      messageContextScrim.addEventListener('click', closeMessageContextMenu);
+      messageContextScrim.addEventListener('pointerdown', event => event.preventDefault());
+      document.addEventListener('keydown', event => {
+        if (event.key === 'Escape') closeMessageContextMenu();
+      });
+    }
+
+
+    function openImageLightbox(src) {
+      if (!messageLightbox || !messageLightboxImg || !src) return;
+      messageLightboxImg.src = src;
+      messageLightbox.alt = '图片';
+      messageLightbox.classList.add('is-open');
+      messageLightbox.hidden = false;
+    }
+    function closeImageLightbox() {
+      if (messageLightbox) {
+        messageLightbox.classList.remove('is-open');
+        messageLightbox.hidden = true;
+        messageLightboxImg.src = '';
+      }
+    }
+    messageLightbox.addEventListener('click', closeImageLightbox);
+    messageLightbox.addEventListener('pointerdown', event => event.preventDefault());
+    document.addEventListener('keydown', event => {
+      if (event.key === 'Escape') closeImageLightbox();
+    });
+
+function addDetails(message, steps = []) {
       const old = message.article.querySelector('details.process');
       if (old) old.remove();
       const normalizedSteps = Array.isArray(steps) ? steps.filter(step => step && (step.text || step.label)).slice(-500) : [];
@@ -7627,6 +7870,9 @@
     }
 
     async function loadThreads(options = {}) {
+      if (!options.quiet && !options.detectTransitions && !options.renderMenu) {
+        setTopStatus('正在读取任务列表…');
+      }
       const detectTransitions = Boolean(options.detectTransitions);
       const renderMode = options.renderMenu || 'always';
       const response = await fetchApi(`/codex/threads?limit=120&token=${encodeURIComponent(token)}`, { cache: 'no-store' });
