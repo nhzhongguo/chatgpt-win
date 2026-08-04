@@ -1001,6 +1001,22 @@
       font-size: 11px;
       white-space: nowrap;
     }
+    .thread-option.is-search-result {
+      grid-template-columns: minmax(0, 1fr);
+      padding-top: 7px;
+      padding-bottom: 7px;
+    }
+    .search-result-snippet {
+      grid-column: 1 / -1;
+      display: block;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: var(--muted-3);
+      font-size: 12px;
+      line-height: 1.35;
+    }
     .thread-option-dot {
       width: 9px;
       height: 9px;
@@ -3937,6 +3953,9 @@
 
     let selectedThreadId = localStorage.getItem('codexMini.selectedThread') || '';
     let threadSearchTerm = '';
+    let threadSearchResults = [];
+    let threadSearchTimer = null;
+    let threadSearchBusy = false;
     let pendingNewThread = null;
     let knownThreads = [];
     const WORKSPACE_TITLES = {
@@ -8219,6 +8238,33 @@ function addDetails(message, steps = [], liveUpdate = false) {
       parent.appendChild(button);
     }
 
+    function appendSearchResultOption(parent, result) {
+      const button = document.createElement('button');
+      const name = document.createElement('span');
+      const snippet = document.createElement('span');
+      button.className = 'thread-option is-search-result';
+      button.type = 'button';
+      button.title = result.threadId || '';
+      button.setAttribute('aria-current', 'false');
+      name.className = 'thread-option-title';
+      const text = document.createElement('span');
+      text.className = 'thread-title-text';
+      text.textContent = result.title || '未命名任务';
+      name.appendChild(text);
+      snippet.className = 'search-result-snippet';
+      snippet.textContent = result.snippet || '';
+      button.append(name, snippet);
+      button.addEventListener('click', () => {
+        if (threadSearch) threadSearch.value = '';
+        threadSearchTerm = '';
+        threadSearchResults = [];
+        if (threadSearchTimer) { clearTimeout(threadSearchTimer); threadSearchTimer = null; }
+        renderThreadMenu();
+        selectThread(result.threadId);
+      });
+      parent.appendChild(button);
+    }
+
     function appendProjectGroup(parent, group, isCurrent = false) {
       const isOpen = openProjectKeys.has(group.key);
       const wrap = document.createElement('div');
@@ -8261,7 +8307,8 @@ function addDetails(message, steps = [], liveUpdate = false) {
         ? knownThreads.filter(item => [item.name, item.preview, item.projectName, item.projectPath, item.cwd]
           .some(value => String(value || '').toLocaleLowerCase('zh-CN').includes(query)))
         : knownThreads;
-      if (!visibleThreads.length) {
+      const hasContentHits = Boolean(query && threadSearchResults.length);
+      if (!visibleThreads.length && !hasContentHits) {
         const empty = document.createElement('div');
         empty.className = 'empty-thread-menu';
         empty.textContent = query ? '没有找到相关任务。' : '还没有读取到任务。';
@@ -8342,8 +8389,51 @@ function addDetails(message, steps = [], liveUpdate = false) {
         section.append(label, list);
         menuRoot.appendChild(section);
       }
+
+      if (hasContentHits) {
+        const section = document.createElement('section');
+        const label = document.createElement('div');
+        const list = document.createElement('div');
+        section.className = 'thread-section';
+        label.className = 'thread-section-label';
+        list.className = 'thread-list';
+        label.textContent = '对话内容';
+        const visibleIds = new Set(visibleThreads.map(item => item.id));
+        for (const result of threadSearchResults) {
+          if (visibleIds.has(result.threadId)) continue;
+          appendSearchResultOption(list, result);
+        }
+        if (list.children.length) section.append(label, list);
+        menuRoot.appendChild(section);
+      }
       lastThreadMenuSignature = threadMenuVisualSignature();
       positionThreadMenuCard();
+    }
+
+    function scheduleThreadSearch() {
+      if (threadSearchTimer) clearTimeout(threadSearchTimer);
+      threadSearchTimer = setTimeout(runThreadContentSearch, 300);
+    }
+
+    async function runThreadContentSearch() {
+      const query = String(threadSearch?.value || '').trim();
+      if (query.length < 2) {
+        threadSearchResults = [];
+        renderThreadMenu();
+        return;
+      }
+      if (threadSearchBusy) return;
+      threadSearchBusy = true;
+      try {
+        const response = await fetchApi(`/codex/search?q=${encodeURIComponent(query)}&limit=50&token=${encodeURIComponent(token)}`, { cache: 'no-store' });
+        const data = await response.json().catch(() => ({}));
+        threadSearchResults = data && data.ok && Array.isArray(data.results) ? data.results : [];
+      } catch {
+        threadSearchResults = [];
+      } finally {
+        threadSearchBusy = false;
+        renderThreadMenu();
+      }
     }
 
     async function loadThreads(options = {}) {
@@ -9829,6 +9919,7 @@ function stopPolling() {
     });
     threadSearch?.addEventListener('input', () => {
       threadSearchTerm = threadSearch.value || '';
+      scheduleThreadSearch();
       renderThreadMenu();
     });
     drawerConnection?.addEventListener('click', event => {

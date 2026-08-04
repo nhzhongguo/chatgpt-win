@@ -40,7 +40,7 @@ test('All required route handlers are defined', () => {
     '/codex/schedules', '/codex/thread-action',
     '/send', '/codex/attachment',
     '/codex/download', '/codex/rotate-token',
-    '/codex/export', '/codex/prompts',
+    '/codex/export', '/codex/prompts', '/codex/search',
   ];
   for (const route of routes) {
     assert.ok(src.includes(route), 'Route ' + route + ' is defined');
@@ -72,6 +72,24 @@ test('Phase 1: Mobile UI includes voice input, TTS, export, and prompt library',
   assert.ok(html.includes('id="prompt-library-panel"'), 'prompt library panel');
   assert.ok(html.includes('loadPromptLibrary'), 'prompt library loader');
   assert.ok(html.includes('promptLibraryCreated') === false, 'notice key mismatch guard');
+});
+
+test('Phase A1: full-text search endpoint, helpers, and mobile UI wiring are defined', () => {
+  const src = require('fs').readFileSync('./server.js', 'utf8');
+  assert.ok(src.includes('function handleSearch'), 'handleSearch defined');
+  assert.ok(src.includes('function searchCodexSessions'), 'searchCodexSessions defined');
+  assert.ok(src.includes('function searchableTextFromItem'), 'searchable text extractor defined');
+  assert.ok(src.includes('CODEX_SEARCH_TAIL_BYTES'), 'search tail byte budget constant defined');
+  assert.ok(src.includes('CODEX_SEARCH_MAX_FILES'), 'search max files constant defined');
+  assert.ok(src.includes('CODEX_SEARCH_MAX_RESULTS'), 'search result cap constant defined');
+  assert.ok(src.includes("code: 'BAD_QUERY'"), 'short query rejected with 400');
+  assert.ok(src.includes("code: 'CODEX_SEARCH_FAILED'"), 'search failure mapped to 500');
+  const html = require('fs').readFileSync('./public/index.html', 'utf8');
+  assert.ok(html.includes('id="thread-search"'), 'thread search input exists');
+  assert.ok(html.includes('runThreadContentSearch'), 'frontend content search logic defined');
+  assert.ok(html.includes('scheduleThreadSearch'), 'frontend search debounce scheduling defined');
+  assert.ok(html.includes('appendSearchResultOption'), 'frontend search result renderer defined');
+  assert.ok(html.includes("label.textContent = '对话内容'"), 'frontend content search section label');
 });
 
 test('Rate limit cleanup prevents memory leak', () => {
