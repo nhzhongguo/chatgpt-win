@@ -3936,6 +3936,7 @@
     const UI_LANGUAGE_STORAGE_KEY = 'codexMini.uiLanguage.v1';
     const UI_THEME_STORAGE_KEY = 'codexMini.uiTheme.v1';
     const SETTINGS_CATEGORY_STORAGE_KEY = 'codexMini.settingsCategory.v1';
+    const NOTIFY_COMPLETE_STORAGE_KEY = 'codexMini.notifyComplete.v1';
     const VOICE_READ_STORAGE_KEY = 'codexMini.voiceRead.v1';
     const UI_FONT_SCALE_STORAGE_KEY = 'codexMini.uiFontScale.v1';
     const UI_DENSITY_STORAGE_KEY = 'codexMini.uiDensity.v1';
@@ -3955,14 +3956,14 @@
         closeTasks: '关闭任务列表', newTask: '新建任务', pullRequests: '拉取请求', scheduled: '已安排', plugins: '插件', settings: '设置', archivedTasks: '已归档任务',
         searchTasks: '搜索任务', showAssistant: '显示小助手', mobileSync: '手机同步到当前 Codex 对话', pendingImages: '待发送图片', queued: '待发送', modelAndReasoning: '模型与推理等级', askChatGpt: '问问 ChatGPT Win',
         language: '语言', languageDetail: '在中文和 English 之间切换此手机控制页', languageChanged: '已切换为中文', languageValue: '中文', theme: '背景主题', themeDetail: '为手机控制页选择黑色夜空或白夜背景', blackSky: '黑色夜空', whiteNight: '白夜', selectTask: '选择任务', newTaskLabel: '新任务', loadingHistory: '正在加载这个 ChatGPT 任务的本机聊天记录…', noHistory: '这个任务暂时没有可加载的聊天记录。'
-        , speakReply: '朗读这条回复', exportThread: '导出对话', promptLibrary: '提示词库', promptLibraryEmpty: '暂无提示词，先保存一条吧', promptTitlePlaceholder: '提示词标题（可选）', promptTextPlaceholder: '提示词内容，点选后填入输入框', promptSave: '保存', promptDelete: '删除', promptFilled: '提示词已填入输入框', promptCreated: '已保存提示词', promptDeleted: '已删除提示词'
+        , notifyComplete: '回复完成通知', notifyCompleteDetail: 'Codex 回复完毕时弹出浏览器通知', speakReply: '朗读这条回复', exportThread: '导出对话', promptLibrary: '提示词库', promptLibraryEmpty: '暂无提示词，先保存一条吧', promptTitlePlaceholder: '提示词标题（可选）', promptTextPlaceholder: '提示词内容，点选后填入输入框', promptSave: '保存', promptDelete: '删除', promptFilled: '提示词已填入输入框', promptCreated: '已保存提示词', promptDeleted: '已删除提示词'
       },
       en: {
         languageToggleLabel: '中文', languageSwitchTitle: 'Switch to Chinese', compact: 'Compact', archive: 'Archive', rename: 'Rename', compactContext: 'Compact context', cancel: 'Cancel', save: 'Save',
         closeTasks: 'Close task list', newTask: 'New task', pullRequests: 'Pull requests', scheduled: 'Scheduled', plugins: 'Plugins', settings: 'Settings', archivedTasks: 'Archived tasks',
         searchTasks: 'Search tasks', showAssistant: 'Show assistant', mobileSync: 'Mobile sync for the current Codex conversation', pendingImages: 'Images to send', queued: 'Queued', modelAndReasoning: 'Model and reasoning level', askChatGpt: 'Ask ChatGPT Win',
         language: 'Language', languageDetail: 'Switch this mobile control page between English and Chinese', languageChanged: 'Switched to English', languageValue: 'English', theme: 'Background theme', themeDetail: 'Choose a black-sky or white-night background for this mobile control page', blackSky: 'Black sky', whiteNight: 'White night', selectTask: 'Select task', newTaskLabel: 'New task', loadingHistory: 'Loading the local chat history for this ChatGPT task…', noHistory: 'There is no chat history available for this task yet.'
-        , speakReply: 'Read this reply aloud', exportThread: 'Export chat', promptLibrary: 'Prompts', promptLibraryEmpty: 'No prompts yet. Save one below.', promptTitlePlaceholder: 'Prompt title (optional)', promptTextPlaceholder: 'Prompt text — tap to fill the input box', promptSave: 'Save', promptDelete: 'Delete', promptFilled: 'Prompt filled into the input box', promptCreated: 'Prompt saved', promptDeleted: 'Prompt deleted'
+        , notifyComplete: 'Completion notification', notifyCompleteDetail: 'Show a browser notification when Codex finishes replying', speakReply: 'Read this reply aloud', exportThread: 'Export chat', promptLibrary: 'Prompts', promptLibraryEmpty: 'No prompts yet. Save one below.', promptTitlePlaceholder: 'Prompt title (optional)', promptTextPlaceholder: 'Prompt text — tap to fill the input box', promptSave: 'Save', promptDelete: 'Delete', promptFilled: 'Prompt filled into the input box', promptCreated: 'Prompt saved', promptDeleted: 'Prompt deleted'
       }
     };
     let uiLanguage = localStorage.getItem(UI_LANGUAGE_STORAGE_KEY) === 'en' ? 'en' : 'zh';
@@ -3972,6 +3973,7 @@
     let activeSettingsCategory = localStorage.getItem(SETTINGS_CATEGORY_STORAGE_KEY) || 'general';
     let activeSettingsGroup = localStorage.getItem(SETTINGS_GROUP_STORAGE_KEY) || SETTINGS_GROUP_BY_CATEGORY[activeSettingsCategory] || 'personal';
     let voiceReadEnabled = localStorage.getItem(VOICE_READ_STORAGE_KEY) === '1';
+    let notifyCompleteEnabled = localStorage.getItem(NOTIFY_COMPLETE_STORAGE_KEY) === '1';
     let uiFontScale = ['small', 'normal', 'large', 'xlarge'].includes(localStorage.getItem(UI_FONT_SCALE_STORAGE_KEY))
       ? localStorage.getItem(UI_FONT_SCALE_STORAGE_KEY)
       : 'normal';
@@ -4090,6 +4092,13 @@
       localStorage.setItem(SETTINGS_CATEGORY_STORAGE_KEY, activeSettingsCategory);
       renderWorkspace();
       requestAnimationFrame(() => workspacePanel?.scrollTo?.({ top: 0, behavior: 'instant' }));
+    }
+
+    function toggleNotifyComplete() {
+      notifyCompleteEnabled = !notifyCompleteEnabled;
+      localStorage.setItem(NOTIFY_COMPLETE_STORAGE_KEY, notifyCompleteEnabled ? '1' : '0');
+      if (activeWorkspace === 'settings') renderWorkspace();
+      setNotice(notifyCompleteEnabled ? '已开启回复完成通知' : '已关闭回复完成通知', 'ok');
     }
 
     function toggleVoiceRead() {
@@ -7583,6 +7592,7 @@ function addDetails(message, steps = [], liveUpdate = false) {
         voice: () => appendSettingsSection('语音', [
           { title: '语音输入', detail: '使用手机浏览器的麦克风，把识别内容写入当前任务输入框', metaNode: workspaceActionButton('开始', startVoiceDictation) },
           { title: '朗读回复', detail: '使用当前浏览器语音引擎朗读助手回复', metaNode: workspaceToggleNode(voiceReadEnabled, toggleVoiceRead) },
+          { title: '回复完成通知', detail: 'Codex 回复完毕时弹出浏览器通知', metaNode: workspaceToggleNode(notifyCompleteEnabled, toggleNotifyComplete) },
           { title: '朗读最近回复', detail: '立即朗读当前任务最后一条助手消息', metaNode: workspaceActionButton('朗读', speakLatestAssistantReply) },
           { title: '听写快捷键', detail: '桌面端快捷键由 ChatGPT Win 管理，手机端通过“语音输入”启动', meta: '电脑端管理' },
         ], content),
@@ -8977,6 +8987,13 @@ function stopPolling() {
           serializeMessages();
           if (!isErrorStatus && promoteNextQueuedSendAfterCurrent(data)) return;
           if (isErrorStatus) clearQueuedSends();
+          if (notifyCompleteEnabled && 'Notification' in window && !isErrorStatus) {
+            if (Notification.permission === 'granted') {
+              new Notification('Codex 回复完成', { body: finalText.slice(0, 120), icon: 'icons/icon-192.png', tag: 'codex-complete' });
+            } else if (Notification.permission !== 'denied') {
+              Notification.requestPermission().then(p => { if (p === 'granted') new Notification('Codex 回复完成', { body: finalText.slice(0, 120), icon: 'icons/icon-192.png', tag: 'codex-complete' }); });
+            }
+          }
           activeAssistant = null;
           thread.querySelectorAll('.message.user .msg-status.is-sending').forEach(el => {
             el.className = 'msg-status is-sent';

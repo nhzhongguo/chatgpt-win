@@ -19,5 +19,10 @@
       "type": "image/png",
       "purpose": "any"
     }
+  ],
+  "start_url": ".",
+  "categories": [
+    "utilities",
+    "productivity"
   ]
 }
