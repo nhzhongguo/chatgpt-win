@@ -1286,6 +1286,111 @@
     }
     .speak-btn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
     .speak-btn.is-speaking { color: #ff5d5d; background: rgba(255, 93, 93, .14); }
+    .quoted-preview {
+      display: grid;
+      gap: 3px;
+      padding: 8px 12px;
+      margin: 0 0 6px;
+      border-left: 3px solid var(--accent-blue);
+      border-radius: 0 8px 8px 0;
+      background: rgba(255,255,255,.04);
+      font-size: 12px;
+      color: var(--muted);
+      max-height: 72px;
+      overflow: hidden;
+    }
+    .quoted-preview-author {
+      font-weight: 820;
+      color: var(--accent-blue-soft);
+    }
+    .quoted-preview-text {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .quoted-preview-dismiss {
+      position: absolute;
+      top: 4px;
+      right: 4px;
+      appearance: none;
+      border: 0;
+      background: transparent;
+      color: var(--faint);
+      font-size: 16px;
+      cursor: pointer;
+      line-height: 1;
+      padding: 2px 4px;
+    }
+
+    .msg-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      font-size: 10px;
+      color: var(--faint);
+      margin-left: 6px;
+      vertical-align: middle;
+    }
+    .msg-status svg {
+      width: 12px;
+      height: 12px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 1.8;
+    }
+    .msg-status.is-sent { color: var(--ok); }
+    .msg-status.is-sending { color: var(--muted); }
+    .msg-status.is-read { color: var(--accent-blue); }
+
+    .message.is-editing .bubble {
+      display: none;
+    }
+    .message.is-editing .inline-edit-area {
+      display: block;
+    }
+    .inline-edit-area {
+      display: none;
+      width: 100%;
+      box-sizing: border-box;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--composer-bg);
+      color: var(--text);
+      font: inherit;
+      font-size: 14px;
+      line-height: 1.5;
+      padding: 10px 12px;
+      resize: vertical;
+      min-height: 60px;
+      max-height: 200px;
+    }
+    .inline-edit-actions {
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+      margin-top: 6px;
+    }
+    .inline-edit-actions button {
+      appearance: none;
+      border: 0;
+      border-radius: 999px;
+      font: inherit;
+      font-size: 12px;
+      font-weight: 820;
+      padding: 6px 16px;
+      cursor: pointer;
+      touch-action: manipulation;
+    }
+    .inline-edit-save {
+      background: var(--accent);
+      color: #111;
+    }
+    .inline-edit-cancel {
+      background: transparent;
+      color: var(--muted);
+      border: 1px solid var(--line);
+    }
+
     .date-separator {
       display: grid;
       grid-template-columns: 1fr auto 1fr;
@@ -4829,6 +4934,12 @@
           throw new Error(`${data.message || '切换推理模式失败'}${detail ? `：${detail}` : ''}`);
         }
         if (selectedThreadId) syncedThreadId = selectedThreadId;
+        const lastUserMsg = thread.querySelector('.message.user:last-child .msg-status');
+        if (lastUserMsg) {
+          lastUserMsg.className = 'msg-status is-sent';
+          lastUserMsg.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 13l4 4L19 7"/></svg>';
+          lastUserMsg.title = '已发送';
+        }
         if (data.targetReasoningMode) {
           writeReasoningOverride(selectedThreadId, data.targetReasoningMode);
           renderReasoningBadge(data.targetReasoningMode);
@@ -6453,6 +6564,13 @@
       setMetaLabel(meta, options.label || (role === 'user' ? '你' : 'Codex'), msgTimestamp);
       setMarkdown(bubble, text);
       wrap.append(meta, bubble);
+      if (role === 'user') {
+        const statusEl = document.createElement('span');
+        statusEl.className = 'msg-status is-sending';
+        statusEl.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 7v5l3 3"/></svg>';
+        statusEl.title = '发送中…';
+        meta.appendChild(statusEl);
+      }
       if (role === 'assistant' && !options.pending) {
         const speakButton = document.createElement('button');
         speakButton.type = 'button';
@@ -6617,6 +6735,88 @@
     document.addEventListener('keydown', event => {
       if (event.key === 'Escape') closeImageLightbox();
     });
+
+
+    function startInlineEdit(article, bubble) {
+      if (!article || !bubble) return;
+      const existing = article.querySelector('.inline-edit-area');
+      if (existing) return;
+      const currentText = bubble.textContent || '';
+      const textareaEl = document.createElement('textarea');
+      textareaEl.className = 'inline-edit-area';
+      textareaEl.value = currentText;
+      textareaEl.rows = 3;
+      const actions = document.createElement('div');
+      actions.className = 'inline-edit-actions';
+      const saveBtn = document.createElement('button');
+      saveBtn.className = 'inline-edit-save';
+      saveBtn.textContent = '保存';
+      const cancelBtn = document.createElement('button');
+      cancelBtn.className = 'inline-edit-cancel';
+      cancelBtn.textContent = '取消';
+      actions.append(cancelBtn, saveBtn);
+      const wrap = article.querySelector('.bubble-wrap');
+      wrap.appendChild(textareaEl);
+      wrap.appendChild(actions);
+      article.classList.add('is-editing');
+      textareaEl.focus();
+      textareaEl.setSelectionRange(textareaEl.value.length, textareaEl.value.length);
+      const cleanup = () => {
+        article.classList.remove('is-editing');
+        textareaEl.remove();
+        actions.remove();
+      };
+      cancelBtn.addEventListener('click', cleanup);
+      saveBtn.addEventListener('click', () => {
+        const newText = textareaEl.value;
+        if (newText.trim() && newText !== currentText) {
+          setMarkdown(bubble, newText);
+          serializeMessages();
+        }
+        cleanup();
+      });
+      textareaEl.addEventListener('keydown', event => {
+        if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+          event.preventDefault();
+          saveBtn.click();
+        }
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          cancelBtn.click();
+        }
+      });
+    }
+
+
+    let activeQuote = null;
+    function showQuotePreview(author, text) {
+      dismissQuotePreview();
+      const preview = document.createElement('div');
+      preview.className = 'quoted-preview';
+      preview.style.position = 'relative';
+      const authorEl = document.createElement('div');
+      authorEl.className = 'quoted-preview-author';
+      authorEl.textContent = author;
+      const textEl = document.createElement('div');
+      textEl.className = 'quoted-preview-text';
+      textEl.textContent = text;
+      const dismiss = document.createElement('button');
+      dismiss.className = 'quoted-preview-dismiss';
+      dismiss.type = 'button';
+      dismiss.textContent = '×';
+      dismiss.addEventListener('click', dismissQuotePreview);
+      preview.append(authorEl, textEl, dismiss);
+      textarea.parentElement.insertBefore(preview, textarea);
+      textarea.focus();
+      activeQuote = { author, text };
+    }
+    function dismissQuotePreview() {
+      const existing = document.querySelector('.quoted-preview');
+      if (existing) existing.remove();
+      activeQuote = null;
+    }
+    // Prepend quote text to outgoing message in sendText
+    const origSendTextForQuote = sendText;
 
 function addDetails(message, steps = []) {
       const old = message.article.querySelector('details.process');
@@ -8757,6 +8957,11 @@ function stopPolling() {
           if (!isErrorStatus && promoteNextQueuedSendAfterCurrent(data)) return;
           if (isErrorStatus) clearQueuedSends();
           activeAssistant = null;
+          thread.querySelectorAll('.message.user .msg-status.is-sending').forEach(el => {
+            el.className = 'msg-status is-sent';
+            el.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 13l4 4L19 7"/></svg>';
+            el.title = '已发送';
+          });
           stopPolling();
         } else {
           const processText = activeCommandUi?.pendingText || stepMarkdown(data.steps || []);
@@ -9121,7 +9326,12 @@ function stopPolling() {
       const isPendingNewThreadFirstSend = Boolean(pendingNewThread && !selectedThreadId);
       const queueBehindActiveRun = Boolean((activeAssistant || pollTimer) && !isPendingNewThreadFirstSend);
       if (isPendingNewThreadFirstSend && (activeAssistant || pollTimer)) detachForegroundRunForNewThread();
-      const text = hasTextOverride ? options.text : textarea.value;
+      let quotePrefix = '';
+      if (activeQuote && !hasTextOverride) {
+        quotePrefix = '> **' + activeQuote.author + '：**' + activeQuote.text.replace(/\n/g, '\n> ') + '\n\n';
+        dismissQuotePreview();
+      }
+      const text = hasTextOverride ? options.text : (quotePrefix + textarea.value);
       const attachmentsToSend = hasTextOverride ? [] : [...pendingAttachments];
       if (!text.trim() && !attachmentsToSend.length) return;
       const commandKind = options.commandKind || commandKindForText(text);
