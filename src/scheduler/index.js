@@ -7,7 +7,7 @@
 
 const crypto = require('crypto');
 const { isCodexThreadId, truncateText } = require('../store');
-const { CronParser, getRetryDelay, shouldRetry, RETRY_STRATEGIES } = require('./cron');
+const { CronParser, isValidTimeZone, getRetryDelay, shouldRetry, RETRY_STRATEGIES } = require('./cron');
 
 const SCHEDULED_TASK_LIMIT = 64;
 const SCHEDULED_TASK_MIN_INTERVAL_MINUTES = 5;
@@ -41,11 +41,12 @@ function normalizeScheduledTask(row = {}) {
   let scheduleMode = 'interval'; // 'interval' 或 'cron'
   if (cronExpression) {
     try {
-      cronParser = new CronParser(cronExpression);
+      cronParser = new CronParser(cronExpression, { timeZone: row.timezone || undefined });
       if (cronParser.isValid()) scheduleMode = 'cron';
       else cronParser = null;
     } catch { cronParser = null; }
   }
+  const timezone = isValidTimeZone(row.timezone) ? String(row.timezone).trim() : '';
 
   // 重试策略
   const retryStrategy = ['none', 'fixed', 'exponential'].includes(row.retryStrategy) ? row.retryStrategy : 'none';
@@ -71,7 +72,8 @@ function normalizeScheduledTask(row = {}) {
     scheduleMode,
     intervalMinutes,
     cronExpression: cronParser ? cronExpression : '',
-    cronDescription: cronParser ? cronParser.describe() : '',
+    cronDescription: cronParser ? (timezone ? `${cronParser.describe()}（${timezone}）` : cronParser.describe()) : '',
+    timezone,
     retryStrategy,
     retryCount: Math.max(0, Number(row.retryCount) || 0),
     enabled: row.enabled !== false,
@@ -100,6 +102,7 @@ function createScheduledTaskRecord(payload = {}, existing = null) {
   const id = existing?.id || `task-${crypto.randomBytes(6).toString('hex')}`;
   const intervalMinutes = normalizeScheduleInterval(payload.intervalMinutes ?? existing?.intervalMinutes ?? 60);
   const cronExpression = String(payload.cronExpression ?? existing?.cronExpression ?? '').trim();
+  const timezone = isValidTimeZone(payload.timezone) ? String(payload.timezone).trim() : (existing?.timezone || '');
   const retryStrategy = payload.retryStrategy ?? existing?.retryStrategy ?? 'none';
   const base = existing || {};
   return normalizeScheduledTask({
@@ -110,6 +113,7 @@ function createScheduledTaskRecord(payload = {}, existing = null) {
     runMode: payload.runMode ?? base.runMode ?? 'standalone',
     intervalMinutes,
     cronExpression,
+    timezone,
     retryStrategy,
     retryCount: base.retryCount || 0,
     enabled: payload.enabled !== undefined ? payload.enabled : (base.enabled !== false),
@@ -127,7 +131,7 @@ function nextScheduledRunAt(task, nowMs = Date.now()) {
   // cron 模式：使用 cron 解析器计算下次运行时间
   if (task.scheduleMode === 'cron' && task.cronExpression) {
     try {
-      const parser = new CronParser(task.cronExpression);
+      const parser = new CronParser(task.cronExpression, { timeZone: task.timezone || undefined });
       const next = parser.nextRun(new Date(nowMs));
       return next ? next.toISOString() : new Date(nowMs + 3600000).toISOString();
     } catch {}

@@ -18,7 +18,7 @@ const { PersistentQueue } = require('../src/store/queue');
 const { Security } = require('../src/security');
 const { CertificateManager } = require('../src/security/certs');
 const { Store } = require('../src/store');
-const { CronParser } = require('../src/scheduler/cron');
+const { CronParser, isValidTimeZone } = require('../src/scheduler/cron');
 const { getTokenFromRequest, corsHeaders } = require('../src/routes');
 
 // ---- Mock HTTP 工具 ----
@@ -487,4 +487,54 @@ test('CronParser: describe 生成中文描述', () => {
   const parser = new CronParser('0 9 * * *');
   const desc = parser.describe();
   assert.ok(typeof desc === 'string' && desc.length > 0);
+});
+
+test('CronParser: timezone 参数按指定时区计算 nextRun', () => {
+  // Asia/Shanghai = UTC+8（无夏令时）：上海 9:00 = UTC 01:00
+  const shanghai = new CronParser('0 9 * * *', { timeZone: 'Asia/Shanghai' });
+  const base = new Date('2026-08-02T00:00:00.000Z');
+  const next = shanghai.nextRun(base);
+  assert.ok(next, '应返回下一次触发时间');
+  assert.equal(next.toISOString(), '2026-08-02T01:00:00.000Z');
+});
+
+test('CronParser: timezone 处理夏令时偏移时区', () => {
+  // America/New_York 8 月为 EDT（UTC-4）：纽约 9:00 = UTC 13:00
+  const newYork = new CronParser('0 9 * * *', { timeZone: 'America/New_York' });
+  const base = new Date('2026-08-02T00:00:00.000Z');
+  const next = newYork.nextRun(base);
+  assert.ok(next, '应返回下一次触发时间');
+  assert.equal(next.toISOString(), '2026-08-02T13:00:00.000Z');
+});
+
+test('CronParser: 非法时区被忽略而不是抛错', () => {
+  const parser = new CronParser('0 9 * * *', { timeZone: 'Not/AZone' });
+  assert.ok(parser.isValid());
+  assert.equal(parser.timeZone, '');
+  assert.equal(isValidTimeZone('Asia/Shanghai'), true);
+  assert.equal(isValidTimeZone('Not/AZone'), false);
+});
+
+test('Scheduler: normalizeScheduledTask 透传并校验 timezone', () => {
+  const { normalizeScheduledTask } = require('../src/scheduler');
+  const valid = normalizeScheduledTask({
+    id: 'task-timezone-001',
+    prompt: '每天 9 点汇报',
+    cronExpression: '0 9 * * *',
+    timezone: 'Asia/Shanghai',
+    intervalMinutes: 60,
+  });
+  assert.equal(valid.scheduleMode, 'cron');
+  assert.equal(valid.timezone, 'Asia/Shanghai');
+  assert.ok(valid.cronDescription.includes('Asia/Shanghai'), 'cron 描述应包含时区');
+
+  const invalid = normalizeScheduledTask({
+    id: 'task-timezone-002',
+    prompt: '每天 9 点汇报',
+    cronExpression: '0 9 * * *',
+    timezone: 'Not/AZone',
+    intervalMinutes: 60,
+  });
+  assert.equal(invalid.timezone, '', '非法时区应被清空');
+  assert.ok(!invalid.cronDescription.includes('Not/AZone'));
 });

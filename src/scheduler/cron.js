@@ -9,9 +9,43 @@
 const MONTH_NAMES = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
 const DAY_NAMES = { sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6 };
 
+function isValidTimeZone(value) {
+  const tz = String(value || '').trim();
+  if (!tz) return false;
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function timeZoneParts(date, timeZone) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(date);
+  const values = { year: 0, month: 1, day: 1, hour: 0, minute: 0 };
+  for (const part of parts) {
+    if (part.type === 'year') values.year = Number(part.value);
+    else if (part.type === 'month') values.month = Number(part.value);
+    else if (part.type === 'day') values.day = Number(part.value);
+    else if (part.type === 'hour') values.hour = Number(part.value) % 24;
+    else if (part.type === 'minute') values.minute = Number(part.value);
+  }
+  values.dayOfWeek = new Date(Date.UTC(values.year, values.month - 1, values.day)).getUTCDay();
+  return values;
+}
+
 class CronParser {
-  constructor(expression) {
+  constructor(expression, options = {}) {
     this.expression = String(expression || '').trim().toLowerCase();
+    this.timeZone = isValidTimeZone(options.timeZone) ? String(options.timeZone).trim() : '';
     this.fields = this._parse();
   }
 
@@ -103,16 +137,29 @@ class CronParser {
 
   _matches(date) {
     const f = this.fields;
+    let minute = date.getMinutes();
+    let hour = date.getHours();
+    let day = date.getDate();
+    let month = date.getMonth() + 1;
+    let dow = date.getDay();
+    if (this.timeZone) {
+      const parts = timeZoneParts(date, this.timeZone);
+      minute = parts.minute;
+      hour = parts.hour;
+      day = parts.day;
+      month = parts.month;
+      dow = parts.dayOfWeek;
+    }
 
-    if (f.minute && !f.minute.has(date.getMinutes())) return false;
-    if (f.hour && !f.hour.has(date.getHours())) return false;
-    if (f.month && !f.month.has(date.getMonth() + 1)) return false;
+    if (f.minute && !f.minute.has(minute)) return false;
+    if (f.hour && !f.hour.has(hour)) return false;
+    if (f.month && !f.month.has(month)) return false;
 
     // dayOfMonth 和 dayOfWeek 的组合规则：
     // 如果两者都指定了，满足任一即可（OR 关系）
     // 如果只指定了一个，则必须满足
-    const domMatch = !f.dayOfMonth || f.dayOfMonth.has(date.getDate());
-    const dowMatch = !f.dayOfWeek || f.dayOfWeek.has(date.getDay());
+    const domMatch = !f.dayOfMonth || f.dayOfMonth.has(day);
+    const dowMatch = !f.dayOfWeek || f.dayOfWeek.has(dow);
 
     if (f.dayOfMonth && f.dayOfWeek) {
       return domMatch || dowMatch;
@@ -188,4 +235,4 @@ function shouldRetry(strategy, attempt) {
   return attempt < config.retries;
 }
 
-module.exports = { CronParser, RETRY_STRATEGIES, getRetryDelay, shouldRetry };
+module.exports = { CronParser, isValidTimeZone, RETRY_STRATEGIES, getRetryDelay, shouldRetry };
