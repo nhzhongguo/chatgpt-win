@@ -1286,6 +1286,29 @@
     }
     .speak-btn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
     .speak-btn.is-speaking { color: #ff5d5d; background: rgba(255, 93, 93, .14); }
+    .date-separator {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      gap: 12px;
+      align-items: center;
+      margin: 24px 0 14px;
+      color: var(--faint);
+      font-size: 11px;
+    }
+    .date-separator::before,
+    .date-separator::after {
+      content: '';
+      display: block;
+      height: 1px;
+      background: var(--line);
+    }
+
+    .retry-send-btn {
+      appearance: none; border: 0; border-radius: 999px; background: var(--accent);
+      color: #111; font: inherit; font-size: 12px; font-weight: 820; padding: 6px 16px;
+      cursor: pointer; touch-action: manipulation; margin: 6px 0 0 auto; display: block;
+    }
+    .retry-send-btn:active { opacity: .7; }
     .message-lightbox {
       position: fixed;
       z-index: 210;
@@ -4142,6 +4165,7 @@
     const threadRuntimeStates = new Map();
     const locallyStoppedThreads = new Map();
     let completedThreadNoticeTimes = new Map();
+    const threadMessagesCache = new Map();
     const completedThreadIds = readCompletedThreadIds();
     let lastThreadMenuSignature = '';
 
@@ -6371,7 +6395,7 @@
       const attachments = Array.isArray(item.attachments) ? item.attachments : [];
       const itemCommandKind = item.commandKind || commandKindForText(item.text);
       const itemCommandUi = commandUi(itemCommandKind);
-      const user = messageEl('user', item.text || (attachments.length ? ' ' : ''), { label: itemCommandUi?.userLabel || (attachments.length ? `你 · ${attachments.length} 张图片` : '你') });
+      const user = messageEl('user', item.text || (attachments.length ? ' ' : ''), { timestamp: item.timestamp, label: itemCommandUi?.userLabel || (attachments.length ? `你 · ${attachments.length} 张图片` : '你') });
       appendImagesToBubble(user, attachments);
       activeAssistant = messageEl('assistant', itemCommandUi?.pendingText || '已发送，等待 Codex 回复…', { label: itemCommandUi ? itemCommandUi.runningLabel('0s') : 'Codex · 运行 0s', pending: true });
       activeAssistant.commandKind = itemCommandKind;
@@ -6424,7 +6448,9 @@
       wrap.className = 'bubble-wrap';
       meta.className = 'meta';
       bubble.className = 'bubble markdown-body';
-      setMetaLabel(meta, options.label || (role === 'user' ? '你' : 'Codex'));
+      const msgTimestamp = options.timestamp || Date.now();
+      if (!options.timestamp) insertDateSeparatorIfNeeded(msgTimestamp);
+      setMetaLabel(meta, options.label || (role === 'user' ? '你' : 'Codex'), msgTimestamp);
       setMarkdown(bubble, text);
       wrap.append(meta, bubble);
       if (role === 'assistant' && !options.pending) {
@@ -8475,7 +8501,7 @@ function addDetails(message, steps = []) {
         try {
           for (const row of data.messages) {
             const msg = messageEl(row.role, row.text || '', {
-              label: row.label || (row.role === 'user' ? '你' : 'Codex'),
+              label: row.label || (row.role === 'user' ? '你' : 'Codex'), timestamp: row.timestamp,
               skipScroll: true,
             });
             if (row.attachments?.length) appendImagesToBubble(msg, row.attachments);
@@ -8587,7 +8613,61 @@ function addDetails(message, steps = []) {
       } catch {}
     }
 
-    function stopPolling() {
+    
+    function saveThreadMessagesToCache(threadId) {
+      if (!threadId) return;
+      const messages = [];
+      for (const article of thread.querySelectorAll('.message')) {
+        const role = article.classList.contains('user') ? 'user' : 'assistant';
+        const bubble = article.querySelector('.bubble');
+        const meta = article.querySelector('.meta');
+        const text = safeBubbleText(article);
+        const steps = Array.isArray(article._processSteps) ? article._processSteps.slice(-500) : [];
+        const images = [];
+        if (bubble) {
+          for (const img of bubble.querySelectorAll('img.attachment-preview')) {
+            images.push({ src: img.src, alt: img.alt || '图片' });
+          }
+        }
+        const stepsEl = article.querySelector('details.process');
+        messages.push({
+          role,
+          text,
+          label: meta ? meta.textContent || '' : '',
+          steps,
+          images,
+          hasSteps: Boolean(stepsEl && steps.length),
+        });
+      }
+      threadMessagesCache.set(threadId, messages);
+    }
+    function restoreThreadMessagesFromCache(threadId) {
+      clearThreadMessages();
+      const messages = threadMessagesCache.get(threadId);
+      if (!messages || !messages.length) return false;
+      beginHistoryRenderAtBottom();
+      try {
+        for (const row of messages) {
+          const msg = messageEl(row.role, row.text, { label: row.label || (row.role === 'user' ? '你' : 'Codex'), skipScroll: true });
+          if (Array.isArray(row.images) && row.images.length) {
+            for (const imgData of row.images) {
+              const img = document.createElement('img');
+              img.className = 'attachment-preview';
+              img.src = imgData.src;
+              img.alt = imgData.alt;
+              img.loading = 'lazy';
+              msg.bubble.appendChild(img);
+            }
+          }
+          if (row.hasSteps && row.steps.length) addDetails(msg, row.steps);
+        }
+      } finally {
+        finishHistoryRenderAtBottom();
+      }
+      return true;
+    }
+
+function stopPolling() {
       pollGeneration += 1;
       if (pollTimer) clearInterval(pollTimer);
       pollTimer = null;
@@ -8644,7 +8724,7 @@ function addDetails(message, steps = []) {
         if (generation !== pollGeneration || !activeAssistant) return;
         if (!data.ok) throw new Error(data.message || '读取失败');
         if (!data.available && data.status === 'missing') throw new Error(data.message || '没有找到所选任务。');
-        if (data.available) {
+        if (data.available) { saveThreadMessagesToCache(selectedThreadId);
           if (data.threadId && (!selectedThreadId || pendingNewThread)) adoptNewThreadId(data.threadId);
           updateContextFromStatus(data);
           applyThreadRuntimeState(data.threadId || watch.threadId || selectedThreadId, runtimeSnapshotFromStatusData(data), { detectTransitions: true });
