@@ -1286,6 +1286,26 @@
     }
     .speak-btn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
     .speak-btn.is-speaking { color: #ff5d5d; background: rgba(255, 93, 93, .14); }
+    .process-feed.steps-active .process-tools details[open] {
+      max-height: 120px;
+      overflow-y: auto;
+      transition: max-height .2s ease;
+    }
+    .process-status-line .process-activity {
+      display: inline-block;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--ok);
+      margin-right: 6px;
+      vertical-align: middle;
+      animation: pulse-dot 1.2s ease-in-out infinite;
+    }
+    @keyframes pulse-dot {
+      0%, 100% { opacity: .4; transform: scale(.85); }
+      50% { opacity: 1; transform: scale(1); }
+    }
+
     .quoted-preview {
       display: grid;
       gap: 3px;
@@ -4652,13 +4672,14 @@
       updateReasoningFromStatus(data);
       updateModelFromStatus(data);
     }
-    function cycleContextDisplayMode() {
-      contextDisplayMode = (contextDisplayMode + 1) % 3;
+    function cycleContextDisplayMode() { if (activeAssistant || pollTimer) { setNotice('正在回复中', ''); return; }
+      contextDisplayMode = (contextDisplayMode + 1) % 4;
       localStorage.setItem(CONTEXT_DISPLAY_MODE_STORAGE_KEY, String(contextDisplayMode));
       renderContextIndicator();
     }
     function setTopStatus(text = '已连接', type = '', options = {}) {
       if (!options.force && topNoticeUntil && Date.now() < topNoticeUntil) return;
+      if (contextDisplayMode === 3) { renderContextIndicator(); return; }
       topStatusState = text || '已连接';
       topStatusType = type || '';
       renderContextIndicator();
@@ -6818,7 +6839,7 @@
     // Prepend quote text to outgoing message in sendText
     const origSendTextForQuote = sendText;
 
-function addDetails(message, steps = []) {
+function addDetails(message, steps = [], liveUpdate = false) {
       const old = message.article.querySelector('details.process');
       if (old) old.remove();
       const normalizedSteps = Array.isArray(steps) ? steps.filter(step => step && (step.text || step.label)).slice(-500) : [];
@@ -6832,7 +6853,7 @@ function addDetails(message, steps = []) {
       details.open = true;
       list.className = 'steps';
       const groups = processGroups(normalizedSteps);
-      summary.textContent = groups.map(group => processGroupLabel(group)).join(' · ');
+      summary.textContent = (liveUpdate ? '⏳ ' : '') + groups.map(group => processGroupLabel(group)).join(' · ');
       summary.title = '展开查看过程记录';
       let visibleCount = Math.min(4, normalizedSteps.length);
       const renderStepPage = () => {
