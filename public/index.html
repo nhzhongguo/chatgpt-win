@@ -1286,6 +1286,117 @@
     }
     .speak-btn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
     .speak-btn.is-speaking { color: #ff5d5d; background: rgba(255, 93, 93, .14); }
+    :focus-visible {
+      outline: 2px solid var(--accent-blue);
+      outline-offset: 2px;
+      border-radius: 4px;
+    }
+    .skip-link {
+      position: fixed;
+      top: -100%;
+      left: 16px;
+      z-index: 9999;
+      padding: 12px 20px;
+      background: var(--accent-blue);
+      color: #111;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 820;
+      text-decoration: none;
+      transition: top .15s ease;
+    }
+    .skip-link:focus { top: 12px; }
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0,0,0,0);
+      white-space: nowrap;
+      border: 0;
+    }
+
+    .batch-mode .thread-option { padding-left: 38px; }
+    .batch-mode .thread-option::before,
+    .batch-mode .pinned-thread-option::before { display: none; }
+    .batch-checkbox {
+      position: absolute;
+      left: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      border: 2px solid var(--line);
+      background: transparent;
+      appearance: none;
+      cursor: pointer;
+      z-index: 2;
+      display: none;
+    }
+    .batch-mode .batch-checkbox { display: block; }
+    .batch-checkbox:checked {
+      background: var(--accent-blue);
+      border-color: var(--accent-blue);
+    }
+    .batch-checkbox:checked::after {
+      content: '✓';
+      display: block;
+      color: #fff;
+      font-size: 12px;
+      line-height: 16px;
+      text-align: center;
+    }
+    .thread-option.is-selected { background: rgba(94,180,255,.16); }
+    .batch-action-bar {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      z-index: 200;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+      background: var(--panel-2);
+      border-top: 1px solid var(--line);
+      box-shadow: 0 -8px 24px rgba(0,0,0,.3);
+      transform: translateY(100%);
+      transition: transform .2s ease;
+    }
+    .batch-action-bar.is-open { transform: translateY(0); }
+    .batch-action-bar-label { font-size: 14px; color: var(--text); }
+    .batch-action-bar-actions { display: flex; gap: 8px; }
+    .batch-action-btn {
+      appearance: none;
+      border: 0;
+      border-radius: 999px;
+      font: inherit;
+      font-size: 13px;
+      font-weight: 820;
+      padding: 8px 18px;
+      cursor: pointer;
+      touch-action: manipulation;
+    }
+    .batch-action-btn.primary { background: var(--accent); color: #111; }
+    .batch-action-btn.danger { background: rgba(255,100,100,.15); color: #ff6b6b; }
+    .batch-action-btn:disabled { opacity: .4; cursor: default; }
+    .thread-menu-select-btn {
+      appearance: none;
+      border: 0;
+      border-radius: 999px;
+      background: rgba(255,255,255,.08);
+      color: var(--muted);
+      font: inherit;
+      font-size: 12px;
+      padding: 4px 10px;
+      cursor: pointer;
+      margin-left: auto;
+    }
+    .thread-menu-select-btn:active { background: rgba(255,255,255,.16); }
+
     .process-feed.steps-active .process-tools details[open] {
       max-height: 120px;
       overflow-y: auto;
@@ -3508,6 +3619,7 @@
   </style>
 </head>
 <body>
+  <a href="#thread" class="skip-link">跳转到聊天记录</a>
   <div class="app">
     <header class="topbar">
       <div class="title">
@@ -3543,6 +3655,7 @@
           <button class="thread-action-button" id="thread-action-rename" type="button"><span class="action-icon" id="thread-action-rename-icon" aria-hidden="true"></span><span data-i18n="rename">重命名</span></button>
           <button class="thread-action-button is-blue" id="thread-action-pin-toggle" type="button"><span class="action-icon" id="thread-action-pin-toggle-icon" aria-hidden="true"></span><span id="thread-action-pin-toggle-text">置顶</span></button>
           <button class="thread-action-button" id="thread-action-compact" type="button"><span class="action-icon" id="thread-action-compact-icon" aria-hidden="true"></span><span data-i18n="compactContext">压缩上下文</span></button>
+          <button class="thread-action-button" id="thread-action-select" type="button"><span data-i18n="selectTasks">选择</span></button>
           <button class="thread-action-button" id="thread-action-export" type="button"><span class="action-icon" id="thread-action-export-icon" aria-hidden="true"></span><span data-i18n="exportThread">导出对话</span></button>
           <button class="thread-action-button" id="thread-action-review" type="button" hidden><span class="action-icon" id="thread-action-review-icon" aria-hidden="true"></span><span>审查当前改动</span></button>
         </div>
@@ -3560,6 +3673,14 @@
     <div class="approval-scrim" id="approval-scrim" aria-hidden="true" hidden></div>
   <div class="message-context-scrim" id="message-context-scrim" aria-hidden="true" hidden></div>
   <div class="message-context-menu" id="message-context-menu" role="menu" hidden></div>
+  <div class="batch-action-bar" id="batch-action-bar" role="toolbar" aria-label="批量操作" hidden>
+    <span class="batch-action-bar-label" id="batch-action-bar-label">已选择 0 项</span>
+    <div class="batch-action-bar-actions">
+      <button class="batch-action-btn primary" id="batch-archive-btn" type="button">归档</button>
+      <button class="batch-action-btn danger" id="batch-delete-btn" type="button">删除</button>
+      <button class="batch-action-btn" id="batch-cancel-btn" type="button" style="background:transparent;color:var(--muted)">取消</button>
+    </div>
+  </div>
   <div class="message-lightbox" id="message-lightbox" hidden><img id="message-lightbox-img" src="" alt="" /></div>
 
     <section class="approval-sheet" id="approval-sheet" role="dialog" aria-modal="true" aria-labelledby="approval-title" aria-describedby="approval-summary" hidden>
@@ -3576,7 +3697,7 @@
       </div>
     </section>
     <div class="thread-menu-scrim" id="thread-menu-scrim" aria-hidden="true"></div>
-    <aside class="thread-menu" id="thread-menu" aria-label="任务导航">
+    <aside class="thread-menu" id="thread-menu" role="navigation" aria-label="任务导航">
       <div class="drawer-header">
         <div class="drawer-brand">ChatGPT Win</div>
         <button class="drawer-close" id="drawer-close" type="button" data-i18n-aria="closeTasks" aria-label="关闭任务列表">
@@ -3636,7 +3757,7 @@
       </button>
     </aside>
 
-    <main class="thread" id="thread" aria-label="聊天记录">
+    <main class="thread" id="thread" role="log" aria-label="聊天记录" aria-live="polite">
       <div class="day-note" data-i18n="mobileSync">手机同步到当前 Codex 对话</div>
     </main>
 
@@ -3956,14 +4077,14 @@
         closeTasks: '关闭任务列表', newTask: '新建任务', pullRequests: '拉取请求', scheduled: '已安排', plugins: '插件', settings: '设置', archivedTasks: '已归档任务',
         searchTasks: '搜索任务', showAssistant: '显示小助手', mobileSync: '手机同步到当前 Codex 对话', pendingImages: '待发送图片', queued: '待发送', modelAndReasoning: '模型与推理等级', askChatGpt: '问问 ChatGPT Win',
         language: '语言', languageDetail: '在中文和 English 之间切换此手机控制页', languageChanged: '已切换为中文', languageValue: '中文', theme: '背景主题', themeDetail: '为手机控制页选择黑色夜空或白夜背景', blackSky: '黑色夜空', whiteNight: '白夜', selectTask: '选择任务', newTaskLabel: '新任务', loadingHistory: '正在加载这个 ChatGPT 任务的本机聊天记录…', noHistory: '这个任务暂时没有可加载的聊天记录。'
-        , notifyComplete: '回复完成通知', notifyCompleteDetail: 'Codex 回复完毕时弹出浏览器通知', speakReply: '朗读这条回复', exportThread: '导出对话', promptLibrary: '提示词库', promptLibraryEmpty: '暂无提示词，先保存一条吧', promptTitlePlaceholder: '提示词标题（可选）', promptTextPlaceholder: '提示词内容，点选后填入输入框', promptSave: '保存', promptDelete: '删除', promptFilled: '提示词已填入输入框', promptCreated: '已保存提示词', promptDeleted: '已删除提示词'
+        , notifyComplete: '回复完成通知', notifyCompleteDetail: 'Codex 回复完毕时弹出浏览器通知', speakReply: '朗读这条回复', exportThread: '导出对话', promptLibrary: '提示词库', promptLibraryEmpty: '暂无提示词，先保存一条吧', promptTitlePlaceholder: '提示词标题（可选）', promptTextPlaceholder: '提示词内容，点选后填入输入框', promptSave: '保存', promptDelete: '删除', promptFilled: '提示词已填入输入框', promptCreated: '已保存提示词', promptDeleted: '已删除提示词', selectTasks: '选择'
       },
       en: {
         languageToggleLabel: '中文', languageSwitchTitle: 'Switch to Chinese', compact: 'Compact', archive: 'Archive', rename: 'Rename', compactContext: 'Compact context', cancel: 'Cancel', save: 'Save',
         closeTasks: 'Close task list', newTask: 'New task', pullRequests: 'Pull requests', scheduled: 'Scheduled', plugins: 'Plugins', settings: 'Settings', archivedTasks: 'Archived tasks',
         searchTasks: 'Search tasks', showAssistant: 'Show assistant', mobileSync: 'Mobile sync for the current Codex conversation', pendingImages: 'Images to send', queued: 'Queued', modelAndReasoning: 'Model and reasoning level', askChatGpt: 'Ask ChatGPT Win',
         language: 'Language', languageDetail: 'Switch this mobile control page between English and Chinese', languageChanged: 'Switched to English', languageValue: 'English', theme: 'Background theme', themeDetail: 'Choose a black-sky or white-night background for this mobile control page', blackSky: 'Black sky', whiteNight: 'White night', selectTask: 'Select task', newTaskLabel: 'New task', loadingHistory: 'Loading the local chat history for this ChatGPT task…', noHistory: 'There is no chat history available for this task yet.'
-        , notifyComplete: 'Completion notification', notifyCompleteDetail: 'Show a browser notification when Codex finishes replying', speakReply: 'Read this reply aloud', exportThread: 'Export chat', promptLibrary: 'Prompts', promptLibraryEmpty: 'No prompts yet. Save one below.', promptTitlePlaceholder: 'Prompt title (optional)', promptTextPlaceholder: 'Prompt text — tap to fill the input box', promptSave: 'Save', promptDelete: 'Delete', promptFilled: 'Prompt filled into the input box', promptCreated: 'Prompt saved', promptDeleted: 'Prompt deleted'
+        , notifyComplete: 'Completion notification', notifyCompleteDetail: 'Show a browser notification when Codex finishes replying', speakReply: 'Read this reply aloud', exportThread: 'Export chat', promptLibrary: 'Prompts', promptLibraryEmpty: 'No prompts yet. Save one below.', promptTitlePlaceholder: 'Prompt title (optional)', promptTextPlaceholder: 'Prompt text — tap to fill the input box', promptSave: 'Save', promptDelete: 'Delete', promptFilled: 'Prompt filled into the input box', promptCreated: 'Prompt saved', promptDeleted: 'Prompt deleted', selectTasks: 'Select'
       }
     };
     let uiLanguage = localStorage.getItem(UI_LANGUAGE_STORAGE_KEY) === 'en' ? 'en' : 'zh';
@@ -6692,7 +6813,106 @@
       messageContextMenu.hidden = false;
       messageContextScrim.hidden = false;
     }
-    function closeMessageContextMenu() {
+    
+    // --- Batch selection for thread list ---
+    let batchMode = false;
+    let selectedThreads = new Set();
+    const batchBar = document.getElementById('batch-action-bar');
+    const batchBarLabel = document.getElementById('batch-action-bar-label');
+    const batchArchiveBtn = document.getElementById('batch-archive-btn');
+    const batchDeleteBtn = document.getElementById('batch-delete-btn');
+    const batchCancelBtn = document.getElementById('batch-cancel-btn');
+
+    function enterBatchMode() {
+      batchMode = true;
+      selectedThreads.clear();
+      threadMenu.classList.add('batch-mode');
+      if (batchBar) { batchBar.hidden = false; batchBar.classList.add('is-open'); }
+      updateBatchBar();
+      renderThreadMenu();
+    }
+    function exitBatchMode() {
+      batchMode = false;
+      selectedThreads.clear();
+      threadMenu.classList.remove('batch-mode');
+      if (batchBar) { batchBar.classList.remove('is-open'); batchBar.hidden = true; }
+      renderThreadMenu();
+    }
+    function toggleThreadSelection(threadId, buttonEl) {
+      if (selectedThreads.has(threadId)) {
+        selectedThreads.delete(threadId);
+        if (buttonEl) { buttonEl.classList.remove('is-selected'); buttonEl.querySelector('.batch-checkbox').checked = false; }
+      } else {
+        selectedThreads.add(threadId);
+        if (buttonEl) { buttonEl.classList.add('is-selected'); buttonEl.querySelector('.batch-checkbox').checked = true; }
+      }
+      updateBatchBar();
+    }
+    function updateBatchBar() {
+      if (batchBarLabel) batchBarLabel.textContent = '已选择 ' + selectedThreads.size + ' 项';
+      if (batchArchiveBtn) batchArchiveBtn.disabled = selectedThreads.size === 0;
+      if (batchDeleteBtn) batchDeleteBtn.disabled = selectedThreads.size === 0;
+    }
+    async function batchArchiveThreads() {
+      if (!selectedThreads.size) return;
+      const count = selectedThreads.size;
+      for (const threadId of selectedThreads) {
+        try {
+          await postThreadAction('archive', { threadId });
+          completedThreadIds.delete(threadId);
+          knownThreads = knownThreads.filter(item => item.id !== threadId);
+        } catch (error) { console.warn('batch archive failed:', threadId, error.message); }
+      }
+      exitBatchMode();
+      setNotice('已归档 ' + count + ' 个任务', 'ok');
+      await loadThreads();
+    }
+    async function batchDeleteThreads() {
+      if (!selectedThreads.size) return;
+      const count = selectedThreads.size;
+      for (const threadId of selectedThreads) {
+        try {
+          await postThreadAction('delete', { threadId });
+          completedThreadIds.delete(threadId);
+          knownThreads = knownThreads.filter(item => item.id !== threadId);
+        } catch (error) { console.warn('batch delete failed:', threadId, error.message); }
+      }
+      exitBatchMode();
+      setNotice('已删除 ' + count + ' 个任务', 'ok');
+      await loadThreads();
+    }
+    if (batchArchiveBtn) batchArchiveBtn.addEventListener('click', batchArchiveThreads);
+    if (batchDeleteBtn) batchDeleteBtn.addEventListener('click', batchDeleteThreads);
+    if (batchCancelBtn) batchCancelBtn.addEventListener('click', exitBatchMode);
+
+    // Modify appendThreadOption to include checkbox in batch mode
+    // We patch it by wrapping the existing function
+    const _origAppendThreadOption = appendThreadOption;
+    appendThreadOption = function(parent, item, isConversation) {
+      _origAppendThreadOption(parent, item, isConversation);
+      const lastButton = parent.lastElementChild;
+      if (!lastButton) return;
+      lastButton.style.position = 'relative';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.className = 'batch-checkbox';
+      cb.setAttribute('aria-label', '选择任务 ' + (item.name || item.id));
+      cb.addEventListener('click', event => {
+        event.stopPropagation();
+        toggleThreadSelection(item.id, lastButton);
+      });
+      lastButton.appendChild(cb);
+      if (batchMode) cb.style.display = 'block';
+      if (selectedThreads.has(item.id)) {
+        cb.checked = true;
+        lastButton.classList.add('is-selected');
+      }
+      lastButton.addEventListener('click', event => {
+        if (batchMode) { event.preventDefault(); event.stopPropagation(); toggleThreadSelection(item.id, lastButton); }
+      });
+    };
+
+function closeMessageContextMenu() {
       currentContextArticle = null;
       if (messageContextMenu) {
         messageContextMenu.classList.remove('is-open');
@@ -9762,6 +9982,8 @@ function stopPolling() {
     wireInstantActionButton(threadActionPinToggle, toggleCurrentThreadPin);
     wireInstantActionButton(threadActionCompact, compactCurrentThread);
     wireInstantActionButton(threadActionExport, exportCurrentThread);
+    const threadActionSelect = document.getElementById('thread-action-select');
+    if (threadActionSelect) wireInstantActionButton(threadActionSelect, enterBatchMode);
     wireInstantActionButton(threadActionReview, reviewCurrentThread);
     wireInstantActionButton(promptLibraryBadge, togglePromptLibrary);
     wireInstantActionButton(promptLibraryClose, closePromptLibrary);
