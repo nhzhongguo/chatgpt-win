@@ -10,6 +10,7 @@ const crypto = require('crypto');
 const { spawn } = require('child_process');
 const { URL } = require('url');
 const { CodexAppServer } = require('./src/codex-app-server');
+const { TailReader } = require('./src/store/tail-reader');
 
 // ===== 模块化组件 =====
 const { Store } = require('./src/store');
@@ -133,7 +134,7 @@ const CODEX_COMMAND_SETTLE_MS = process.platform === 'win32' ? 220 : 180;
 const CODEX_MODEL_COMMAND_SETTLE_MS = process.platform === 'win32' ? 520 : 450;
 const CODEX_REASONING_COMMAND_SETTLE_MS = process.platform === 'win32' ? 520 : 450;
 const CODEX_SEND_CONFIRM_TIMEOUT_MS = process.platform === 'win32' ? 1800 : 0;
-const CODEX_SESSION_FILE_CACHE_MS = 1200;
+const CODEX_SESSION_FILE_CACHE_MS = 3000; // Phase 3.3: 线程列表 TTL 1.2s→3s（配合前端轮询）
 const CODEX_THREAD_LIST_CACHE_MS = 1200;
 const CODEX_HISTORY_INITIAL_TAIL_BYTES = 8 * 1024 * 1024;
 const REASONING_MODE_TARGETS = {
@@ -158,6 +159,44 @@ let lastCodexThreadActivation = { threadId: '', at: 0 };
 // 注：限流（token bucket）已由 Security 模块（src/security/index.js）统一管理
 // -----------------------------------------------------
 let codexSessionFilesCache = { at: 0, files: [] };
+// Phase 3.1: /codex/status 增量解析缓存（尾部只读、追加增量、截断重读）
+const statusTailReader = new TailReader({ tailBytes: CODEX_SESSION_TAIL_BYTES });
+// Phase 3.4: 请求级延迟观测（P50/P95，环形窗口）
+const LATENCY_SAMPLE_LIMIT = 512;
+const latencySamples = [];
+function recordLatency(pathname, ms) {
+  latencySamples.push({ path: pathname, ms });
+  if (latencySamples.length > LATENCY_SAMPLE_LIMIT) {
+    latencySamples.splice(0, latencySamples.length - LATENCY_SAMPLE_LIMIT);
+  }
+}
+function percentileOfSorted(sorted, q) {
+  if (!sorted.length) return 0;
+  const index = Math.min(sorted.length - 1, Math.floor(q * (sorted.length - 1)));
+  return Math.round(sorted[index] * 10) / 10;
+}
+function latencySummary() {
+  if (!latencySamples.length) return { samples: 0 };
+  const all = latencySamples.map(sample => sample.ms).sort((a, b) => a - b);
+  const byPathMap = new Map();
+  for (const sample of latencySamples) {
+    if (!byPathMap.has(sample.path)) byPathMap.set(sample.path, []);
+    byPathMap.get(sample.path).push(sample.ms);
+  }
+  const byPath = [];
+  for (const [path, values] of byPathMap) {
+    values.sort((a, b) => a - b);
+    byPath.push({ path, count: values.length, p50Ms: percentileOfSorted(values, 0.5), p95Ms: percentileOfSorted(values, 0.95) });
+  }
+  byPath.sort((a, b) => b.count - a.count);
+  return {
+    samples: all.length,
+    p50Ms: percentileOfSorted(all, 0.5),
+    p95Ms: percentileOfSorted(all, 0.95),
+    maxMs: Math.round(all[all.length - 1] * 10) / 10,
+    byPath: byPath.slice(0, 10),
+  };
+}
 let threadIndexCache = { mtimeMs: 0, size: 0, byId: null };
 const sessionMetaCache = new Map();
 const firstUserMessageCache = new Map();
@@ -2878,12 +2917,13 @@ function parseCodexStatus(options = {}) {
       durationMs: 0,
     };
   }
-
-  const rawItems = [];
-  for (const line of readTailLines(file)) {
-    try { rawItems.push(JSON.parse(line)); } catch { /* ignore partial/corrupt lines */ }
+  // Phase 3.1: 增量尾部读取（文件未变零重读；追加只读新增字节；截断/重写整体重读）
+  const tailRead = statusTailReader.read(file);
+  const rawItems = tailRead.items;
+  let fileMtimeMs = tailRead.stat ? tailRead.stat.mtimeMs : 0;
+  if (!fileMtimeMs) {
+    try { fileMtimeMs = fs.statSync(file).mtimeMs; } catch { fileMtimeMs = Date.now(); }
   }
-
   let startIndex = -1;
   if (sinceMs) {
     for (let i = 0; i < rawItems.length; i += 1) {
@@ -2999,7 +3039,7 @@ function parseCodexStatus(options = {}) {
     : '';
   const statusSteps = steps.slice(-30);
   if (failed && finalFailureText && !statusSteps.some(step => step.kind === 'error' && step.text === finalFailureText)) {
-    statusSteps.push({ kind: 'error', label: '失败', text: finalFailureText, time: completedAt || new Date(fs.statSync(file).mtimeMs).toISOString() });
+    statusSteps.push({ kind: 'error', label: '失败', text: finalFailureText, time: completedAt || new Date(fileMtimeMs).toISOString() });
   }
   const lastStep = statusSteps[statusSteps.length - 1] || steps[steps.length - 1];
   const status = failed ? 'error' : completed ? 'complete' : active ? 'running' : 'idle';
@@ -3017,7 +3057,7 @@ function parseCodexStatus(options = {}) {
     turnId,
     sessionFile: path.basename(file),
     threadId,
-    updatedAt: lastStep ? lastStep.time : new Date(fs.statSync(file).mtimeMs).toISOString(),
+    updatedAt: lastStep ? lastStep.time : new Date(fileMtimeMs).toISOString(),
     startedAt,
     completedAt,
     durationMs,
@@ -4837,6 +4877,7 @@ async function handleStats(req, res) {
       totals: { total: logs.length, completed, failed, successRate },
       timeRange: { today: todayCount, week: weekCount },
       byAction,
+      latency: latencySummary(),
       recent: logs.slice(0, 20),
     });
   } catch (error) {
@@ -4935,6 +4976,14 @@ const requestHandler = (req, res) => {
   // 预先按请求计算 CORS 安全头，供 json() 响应复用（回显合法 Origin，拒绝未知来源）
   res._corsHeaders = corsHeaders(req);
   if (req.method === 'OPTIONS') return options(req, res);
+  // Phase 3.4: 请求级延迟观测（P50/P95）
+  const requestStartedAt = process.hrtime.bigint();
+  let requestPathname = '';
+  try { requestPathname = new URL(req.url || '/', 'http://local').pathname; } catch { requestPathname = String(req.url || '/').split('?')[0] || '/'; }
+  res.on('finish', () => {
+    const requestMs = Number(process.hrtime.bigint() - requestStartedAt) / 1e6;
+    recordLatency(requestPathname, Math.round(requestMs * 10) / 10);
+  });
   return router.dispatch(req, res);
 };
 

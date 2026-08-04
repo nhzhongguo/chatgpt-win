@@ -112,3 +112,109 @@ test('Process exit handlers clean up resources', () => {
   assert.ok(src.includes('SIGTERM'), 'SIGTERM handled');
   assert.ok(src.includes('cleanupKeepAwake'), 'Keep awake cleanup');
 });
+
+test('Phase 3: /codex/status uses incremental tail parsing', () => {
+  const src = require('fs').readFileSync('./server.js', 'utf8');
+  assert.ok(src.includes("require('./src/store/tail-reader')"), 'TailReader required');
+  assert.ok(src.includes('new TailReader('), 'TailReader instantiated');
+  assert.ok(src.includes('statusTailReader.read(file)'), 'status parse reads via incremental tail cache');
+  assert.ok(src.includes('tailRead.items'), 'status parse reuses cached parsed items');
+  const tail = require('fs').readFileSync('./src/store/tail-reader.js', 'utf8');
+  assert.ok(tail.includes('class TailReader'), 'TailReader class defined');
+  assert.ok(tail.includes('_canAppend'), 'append detection guard exists');
+  assert.ok(tail.includes('edgeBytes'), 'seam integrity check exists');
+});
+
+test('Phase 3: thread list TTL raised to 3s', () => {
+  const src = require('fs').readFileSync('./server.js', 'utf8');
+  assert.ok(src.includes('CODEX_SESSION_FILE_CACHE_MS = 3000'), 'thread list TTL 3s');
+});
+
+test('Phase 3: request latency P50/P95 exposed in /codex/stats', () => {
+  const src = require('fs').readFileSync('./server.js', 'utf8');
+  assert.ok(src.includes('const LATENCY_SAMPLE_LIMIT = 512'), 'latency sample window defined');
+  assert.ok(src.includes('function recordLatency'), 'latency recorder defined');
+  assert.ok(src.includes('function latencySummary'), 'latency summary defined');
+  assert.ok(src.includes("res.on('finish'"), 'per-request timing hook attached');
+  assert.ok(src.includes('latency: latencySummary()'), 'stats response includes latency summary');
+  assert.ok(src.includes('p50Ms'), 'P50 computed');
+  assert.ok(src.includes('p95Ms'), 'P95 computed');
+});
+
+test('Phase 3: /codex/status parses a real session file with since (functional regression)', async () => {
+  const { spawn } = require('node:child_process');
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const path = require('node:path');
+  const net = require('node:net');
+
+  // 隔离的 HOME：CODEX_SESSIONS_DIR = ~/.codex/sessions 指向临时目录，绝不触碰真实会话
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'chatgpt-win-status-'));
+  const sessionsDir = path.join(tmpRoot, '.codex', 'sessions');
+  fs.mkdirSync(sessionsDir, { recursive: true });
+  const base = Date.parse('2026-08-04T10:00:00.000Z');
+  const sessionLines = [
+    JSON.stringify({ timestamp: new Date(base).toISOString(), type: 'event_msg', payload: { type: 'task_started', turn_id: 'turn-regression-1', cwd: tmpRoot } }),
+    JSON.stringify({ timestamp: new Date(base + 1000).toISOString(), type: 'response_item', payload: { type: 'message', role: 'assistant', phase: 'final_answer', content: [{ type: 'output_text', text: '你好，回归测试' }] } }),
+    JSON.stringify({ timestamp: new Date(base + 2000).toISOString(), type: 'event_msg', payload: { type: 'task_complete' } }),
+  ];
+  fs.writeFileSync(path.join(sessionsDir, 'regression-session.jsonl'), sessionLines.join('\n') + '\n');
+
+  const port = await new Promise((resolve, reject) => {
+    const probe = net.createServer();
+    probe.listen(0, '127.0.0.1', () => { const p = probe.address().port; probe.close(() => resolve(p)); });
+    probe.on('error', reject);
+  });
+
+  const env = {
+    ...process.env,
+    USERPROFILE: tmpRoot,
+    HOME: tmpRoot,
+    PORT: String(port),
+    HOST: '127.0.0.1',
+    MOBILE_TYPER_TOKEN: 'regression-token',
+    CODEX_MAX_STATE_DIR: path.join(tmpRoot, '.codex-max'),
+  };
+  const child = spawn(process.execPath, ['server.js'], { env, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+  let stderr = '';
+  child.stderr.on('data', chunk => { stderr += String(chunk); });
+
+  try {
+    let healthy = false;
+    const deadline = Date.now() + 15000;
+    while (Date.now() < deadline) {
+      try {
+        const res = await fetch(`http://127.0.0.1:${port}/codex/health`);
+        if (res.ok) { healthy = true; break; }
+      } catch { /* server not up yet */ }
+      await new Promise(r => setTimeout(r, 250));
+    }
+    assert.ok(healthy, `server should start within 15s; stderr: ${stderr.slice(-500)}`);
+
+    const headers = { 'x-mobile-typer-token': 'regression-token' };
+    const since = encodeURIComponent(new Date(base - 1000).toISOString());
+    const url = `http://127.0.0.1:${port}/codex/status?session=regression-session.jsonl&since=${since}`;
+
+    const res = await fetch(url, { headers });
+    assert.equal(res.status, 200, `status should not 500 (ReferenceError regression); stderr: ${stderr.slice(-500)}`);
+    const body = await res.json();
+    assert.equal(body.ok, true);
+    assert.equal(body.available, true);
+    assert.equal(body.status, 'complete', 'task_complete marker should yield complete status');
+    assert.ok(String(body.final || '').includes('你好'), 'assistant final message should surface');
+
+    // 第二次请求走增量缓存，仍返回一致结果（无 ReferenceError、无 500）
+    const res2 = await fetch(url, { headers });
+    assert.equal(res2.status, 200);
+    const body2 = await res2.json();
+    assert.equal(body2.status, 'complete');
+    assert.equal(body2.final, body.final);
+  } finally {
+    child.kill();
+    await Promise.race([
+      new Promise(resolve => child.once('exit', resolve)),
+      new Promise(resolve => setTimeout(resolve, 5000)),
+    ]);
+    try { fs.rmSync(tmpRoot, { recursive: true, force: true }); } catch { /* ignore */ }
+  }
+});
