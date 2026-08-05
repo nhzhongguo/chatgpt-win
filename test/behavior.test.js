@@ -16,6 +16,7 @@ const https = require('node:https');
 const { Router } = require('../src/routes');
 const { PersistentQueue } = require('../src/store/queue');
 const { Security } = require('../src/security');
+const { SessionManager } = require('../src/security/sessions');
 const { CertificateManager } = require('../src/security/certs');
 const { Store } = require('../src/store');
 const { CronParser, isValidTimeZone } = require('../src/scheduler/cron');
@@ -152,6 +153,59 @@ test('Security: token 可从 header/query/cookie 三种渠道校验', () => {
   assert.equal(security.isAuthorized(mockReq({ url: '/' })), false);
   assert.equal(security.isAuthorized(mockReq({ url: '/', headers: { 'x-mobile-typer-token': 'wrong' } })), false);
   security.destroy();
+});
+
+test('SessionManager: 创建短时会话、校验、撤销并输出 HttpOnly Cookie', () => {
+  const manager = new SessionManager({ sessionTtlMs: 60 * 60 * 1000, cookieSecure: true });
+  try {
+    const created = manager.createSession(' 手机 ');
+    assert.equal(created.session.deviceName, '手机');
+    assert.ok(created.token.length >= 24);
+    assert.equal(manager.validateSession(created.token).deviceName, '手机');
+    assert.equal(manager.validateSession('wrong-token'), null);
+    const cookie = manager.sessionCookie(created.token);
+    assert.match(cookie, /HttpOnly/);
+    assert.match(cookie, /SameSite=Strict/);
+    assert.match(cookie, /Secure/);
+    assert.match(cookie, /Max-Age=\d+/);
+    manager.revokeSession(created.token);
+    assert.equal(manager.validateSession(created.token), null);
+  } finally {
+    manager.destroy();
+  }
+});
+
+test('SessionManager: 过期会话被拒绝且超过上限时淘汰最旧会话', async () => {
+  const manager = new SessionManager({ sessionTtlMs: 10, maxSessions: 2 });
+  try {
+    const expired = manager.createSession('过期');
+    await new Promise(resolve => setTimeout(resolve, 30));
+    assert.equal(manager.validateSession(expired.token), null, '过期会话应失效');
+
+    const first = manager.createSession('first');
+    const second = manager.createSession('second');
+    const third = manager.createSession('third');
+    assert.equal(manager.validateSession(first.token), null, '超过上限应淘汰最旧会话');
+    assert.ok(manager.validateSession(second.token), '较新会话应保留');
+    assert.ok(manager.validateSession(third.token), '最新会话应保留');
+  } finally {
+    manager.destroy();
+  }
+});
+
+test('Security: 短时会话可通过 Cookie 或 Header 鉴权', () => {
+  const sessionManager = new SessionManager();
+  const security = new Security({ initialToken: 'secret-token', sessionManager });
+  try {
+    const created = sessionManager.createSession('phone');
+    const encoded = encodeURIComponent(created.token);
+    assert.equal(security.isAuthorized(mockReq({ url: '/', headers: { cookie: `codexMiniSession=${encoded}` } })), true);
+    assert.equal(security.isAuthorized(mockReq({ url: '/', headers: { 'x-codex-session': created.token } })), true);
+    assert.equal(security.isAuthorized(mockReq({ url: '/', headers: { cookie: 'codexMiniSession=stale' } })), false);
+    assert.equal(security.sessionFromRequest(mockReq({ url: '/', headers: { cookie: `codexMiniSession=${encoded}` } })).deviceName, 'phone');
+  } finally {
+    security.destroy();
+  }
 });
 
 test('Security: 令牌桶限流按 IP 计数', () => {

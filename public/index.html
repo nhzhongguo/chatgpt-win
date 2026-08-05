@@ -2855,7 +2855,7 @@
     }
     .slash-command-item:hover,
     .slash-command-item:active,
-    .slash-command-item.is-active { background: #f1f1f1; }
+    .slash-command-item.is-active { background: #f2f2f2; }
     .slash-command-icon { color: #626262; }
     .slash-command-label { color: #262626; font-size: 14px; font-weight: 560; }
     .slash-command-detail { color: var(--muted-2); font-size: 12px; }
@@ -3927,7 +3927,7 @@
     const threadRenameCancel = document.getElementById('thread-rename-cancel');
     const threadRenameSave = document.getElementById('thread-rename-save');
     const queryToken = new URLSearchParams(location.search).get('token') || '';
-    if (queryToken) localStorage.setItem('codexMini.token', queryToken);
+    if (queryToken) localStorage.removeItem('codexMini.token');
     const token = queryToken || localStorage.getItem('codexMini.token') || '';
     function detectBasePath(pathname) {
       if (pathname === '/chatgpt-win' || pathname.startsWith('/chatgpt-win/')) return '/chatgpt-win';
@@ -3935,6 +3935,11 @@
       return '';
     }
     const basePath = detectBasePath(location.pathname);
+    if (queryToken) {
+      const cleanUrl = new URL(location.href);
+      cleanUrl.searchParams.delete('token');
+      history.replaceState({}, '', `${cleanUrl.pathname}${cleanUrl.search}${cleanUrl.hash}`);
+    }
     const ROUTE_STORAGE_KEY = 'codexMini.apiRoutes.v1';
     const CONTEXT_DISPLAY_MODE_STORAGE_KEY = 'codexMini.contextDisplayMode.v1';
     const normalizeBaseUrl = value => String(value || '').trim().replace(/\/+$/, '');
@@ -4354,7 +4359,11 @@
       speakText(latest.innerText || '');
     }
     async function copyMobileConnectionAddress() {
-      const address = location.href;
+      const address = token ? (() => {
+        const shareUrl = new URL(location.href);
+        shareUrl.searchParams.set('token', token);
+        return shareUrl.toString();
+      })() : location.href;
       try {
         await navigator.clipboard.writeText(address);
         setNotice('连接地址已复制', 'ok');
@@ -4433,7 +4442,7 @@
     document.body.classList.toggle('standalone', isStandalone);
 
     if (queryToken) {
-      document.cookie = `codexMiniToken=${encodeURIComponent(queryToken)}; Path=/; SameSite=Lax; Max-Age=31536000`;
+      document.cookie = 'codexMiniToken=; Path=/; Max-Age=0; SameSite=Lax';
     }
     let openProjectKeys = readOpenProjectKeys();
     const threadRuntimeStates = new Map();
@@ -5402,10 +5411,18 @@
       }
     }
     async function probeApiCandidate(candidate, timeoutMs = 2500) {
-      if (!candidate?.baseUrl || !token) return false;
-      const params = new URLSearchParams({ token, t: String(Date.now()) });
+      if (!candidate?.baseUrl) return false;
+      const targetUrl = `${candidate.baseUrl}/codex/health`;
+      let sameOrigin = false;
+      try { sameOrigin = new URL(targetUrl, location.href).origin === location.origin; } catch {}
+      const params = new URLSearchParams({ t: String(Date.now()) });
+      const requestOptions = { cache: 'no-store' };
+      if (!sameOrigin && token) {
+        params.set('token', token);
+        requestOptions.headers = { 'x-mobile-typer-token': token };
+      }
       try {
-        const response = await fetchWithTimeout(`${candidate.baseUrl}/codex/health?${params}`, { cache: 'no-store' }, timeoutMs);
+        const response = await fetchWithTimeout(`${targetUrl}?${params}`, requestOptions, timeoutMs);
         const data = await response.json().catch(() => ({}));
         if (response.ok && data.ok && data.controlMode) {
           setRouteState('online', { controlMode: data.controlMode, host: data.host || '', error: '' });
@@ -5448,9 +5465,11 @@
       ].filter(Boolean);
       mergeApiCandidates(baseCandidates);
 
-      const params = new URLSearchParams({ token });
       try {
-        const response = await fetchWithTimeout(`${currentApiBase}/codex/config?${params}`, { cache: 'no-store' }, 5000);
+        let response = await fetchWithTimeout(`${currentApiBase}/codex/config`, { cache: 'no-store' }, 5000);
+        if (response.status === 401 && token) {
+          response = await fetchWithTimeout(`${currentApiBase}/codex/config`, { cache: 'no-store', headers: { 'x-mobile-typer-token': token } }, 5000);
+        }
         const data = await response.json();
         if (!response.ok || !data.ok) throw new Error(data.message || '读取线路配置失败');
         localOnlyMode = true;
@@ -5501,7 +5520,36 @@
       delete requestOptions.apiTimeoutMs;
       delete requestOptions.routeSwitchQuiet;
       delete requestOptions.retryProbeTimeoutMs;
-      return fetchWithTimeout(apiUrl(path), requestOptions, timeoutMs);
+      const targetUrl = apiUrl(path);
+      let sameOrigin = false;
+      try { sameOrigin = new URL(targetUrl, location.href).origin === location.origin; } catch {}
+      if (sameOrigin) {
+        const headers = { ...(requestOptions.headers || {}) };
+        delete headers['x-mobile-typer-token'];
+        requestOptions.headers = headers;
+        const strippedPath = (() => {
+          try {
+            const parsed = new URL(path, location.href);
+            if (parsed.searchParams.has('token')) {
+              parsed.searchParams.delete('token');
+              return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+            }
+          } catch {}
+          return path;
+        })();
+        const response = await fetchWithTimeout(apiUrl(strippedPath), requestOptions, timeoutMs);
+        if (response.status === 401 && token) {
+          const retryHeaders = { ...(requestOptions.headers || {}), 'x-mobile-typer-token': token };
+          return fetchWithTimeout(apiUrl(strippedPath), { ...requestOptions, headers: retryHeaders }, timeoutMs);
+        }
+        return response;
+      }
+      if (token) {
+        const headers = { ...(requestOptions.headers || {}) };
+        if (!headers['x-mobile-typer-token']) headers['x-mobile-typer-token'] = token;
+        requestOptions.headers = headers;
+      }
+      return fetchWithTimeout(targetUrl, requestOptions, timeoutMs);
     }
 
     function environmentIcon(kind) {
@@ -6711,7 +6759,6 @@
         img.className = 'attachment-preview';
         img.addEventListener('click', event => { event.stopPropagation(); openImageLightbox(source); });
         const imageUrl = new URL(source, location.href);
-        if (imageUrl.origin === location.origin) imageUrl.searchParams.set('token', token);
         img.src = imageUrl.toString();
         img.loading = 'lazy';
         img.alt = item.name || '图片';
@@ -8719,7 +8766,7 @@ function addDetails(message, steps = [], liveUpdate = false) {
         return;
       }
       closeThreadActionCard();
-      const params = new URLSearchParams({ token, thread: targetThreadId, limit: '120' });
+      const params = new URLSearchParams({ thread: targetThreadId, limit: '120' });
       window.open(apiUrl(`/codex/export?${params}`), '_blank', 'noopener');
       setNotice('正在导出对话为 Markdown', 'ok');
     }

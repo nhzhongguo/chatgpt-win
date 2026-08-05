@@ -16,6 +16,7 @@ const { TailReader } = require('./src/store/tail-reader');
 const { Store } = require('./src/store');
 const { PersistentQueue } = require('./src/store/queue');
 const { Security } = require('./src/security');
+const { SessionManager } = require('./src/security/sessions');
 const { CertificateManager } = require('./src/security/certs');
 const { Logger, defaultLogger } = require('./src/logger');
 const { Scheduler, normalizeScheduledTask, normalizeScheduledTasks, createScheduledTaskRecord, nextScheduledRunAt, SCHEDULED_TASK_LIMIT, RETRY_STRATEGIES } = require('./src/scheduler');
@@ -87,8 +88,9 @@ const codexAppServer = new CodexAppServer({ cwd: __dirname });
 
 // ===== 模块化初始化 =====
 const store = new Store({ stateDir: STATE_DIR, stateFile: STATE_FILE, tokenFile: TOKEN_FILE });
-const security = new Security({ initialToken: TOKEN, appName: APP_NAME, store });
 const logger = defaultLogger;
+const sessionManager = new SessionManager({ logger, cookieSecure: USE_HTTPS });
+const security = new Security({ initialToken: TOKEN, appName: APP_NAME, store, sessionManager });
 const parser = new CodexSessionParser({ store });
 const persistentQueue = new PersistentQueue({ logger });
 const scheduler = new Scheduler({
@@ -3277,13 +3279,14 @@ const mimeTypes = {
   '.ico': 'image/x-icon',
 };
 
-function json(res, status, data) {
+function json(res, status, data, extraHeaders = {}) {
   const body = JSON.stringify(data);
   res.writeHead(status, {
     ...(res._corsHeaders || corsHeaders()),
     'content-type': 'application/json; charset=utf-8',
     'cache-control': 'no-store',
     'content-length': Buffer.byteLength(body),
+    ...extraHeaders,
   });
   res.end(body);
 }
@@ -4581,7 +4584,7 @@ function serveStatic(req, res) {
   if (cached && now - cached.checkedAt < STATIC_CACHE_STAT_TTL_MS) {
     staticFileCache.delete(cacheKey); // LRU：移到末尾
     staticFileCache.set(cacheKey, cached);
-    const headers = staticHeaders(ext, url, cached.size, cached.data.length);
+    const headers = staticHeaders(ext, url, cached.size, cached.data.length, req);
     res.writeHead(200, headers);
     res.end(req.method === 'HEAD' ? undefined : cached.data);
     return;
@@ -4596,7 +4599,7 @@ function serveStatic(req, res) {
       cached.checkedAt = now;
       staticFileCache.delete(cacheKey); // LRU：移到末尾
       staticFileCache.set(cacheKey, cached);
-      const headers = staticHeaders(ext, url, stat.size, cached.data.length);
+      const headers = staticHeaders(ext, url, stat.size, cached.data.length, req);
       res.writeHead(200, headers);
       res.end(req.method === 'HEAD' ? undefined : cached.data);
       return;
@@ -4616,13 +4619,13 @@ function serveStatic(req, res) {
       }
       staticFileCache.set(cacheKey, { data, mtimeMs: stat.mtimeMs, size: stat.size, checkedAt: now });
     }
-    const headers = staticHeaders(ext, url, data.length, data.length);
+    const headers = staticHeaders(ext, url, data.length, data.length, req);
     res.writeHead(200, headers);
     res.end(req.method === 'HEAD' ? undefined : data);
   });
 }
 
-function staticHeaders(ext, url, contentLength, dataLength) {
+function staticHeaders(ext, url, contentLength, dataLength, req) {
   const headers = {
     'content-type': mimeTypes[ext] || 'application/octet-stream',
     'cache-control': ext === '.html' ? 'no-store' : 'public, max-age=3600',
@@ -4635,8 +4638,13 @@ function staticHeaders(ext, url, contentLength, dataLength) {
     // 单文件前端使用内联脚本/样式，CSP 限制外部资源加载与 iframe 嵌套
     headers['content-security-policy'] = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ws: wss:; font-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'";
   }
-  if (ext === '.html' && url.searchParams.get('token') === TOKEN) {
-    headers['set-cookie'] = `codexMiniToken=${encodeURIComponent(TOKEN)}; Path=/; SameSite=Lax; Max-Age=31536000`;
+  if (ext === '.html' && security.isAuthorized(req)) {
+    if (security.sessionFromRequest(req)) {
+      headers['set-cookie'] = 'codexMiniToken=; Path=/; Max-Age=0; SameSite=Lax';
+    } else {
+      const created = sessionManager.createSession(req.headers['user-agent'] || '');
+      headers['set-cookie'] = [sessionManager.sessionCookie(created.token), 'codexMiniToken=; Path=/; Max-Age=0; SameSite=Lax'];
+    }
   }
   return headers;
 }
@@ -4705,6 +4713,16 @@ function getLanApiBases() {
 
 async function handleClientConfig(req, res) {
   if (!isAuthorized(req)) return json(res, 401, { ok: false, code: 'UNAUTHORIZED', message: '访问令牌不正确。' });
+  const extraHeaders = {};
+  const sessionToken = security.sessionTokenFromRequest(req);
+  if (security.sessionFromRequest(req)) {
+    if (sessionToken) {
+      extraHeaders['set-cookie'] = [sessionManager.sessionCookie(sessionToken), 'codexMiniToken=; Path=/; Max-Age=0; SameSite=Lax'];
+    }
+  } else {
+    const created = sessionManager.createSession(req.headers['user-agent'] || '');
+    extraHeaders['set-cookie'] = [sessionManager.sessionCookie(created.token), 'codexMiniToken=; Path=/; Max-Age=0; SameSite=Lax'];
+  }
   let modelOptions = readModelCatalogOptions();
   let transport = 'session-files';
   try {
@@ -4733,7 +4751,7 @@ async function handleClientConfig(req, res) {
     modelOptions,
     reasoningOptions: Object.values(REASONING_MODE_TARGETS),
     update: updateInfo(),
-  });
+  }, extraHeaders);
 }
 
 async function handleHealth(req, res) {

@@ -28,6 +28,12 @@ test('Authorization checks token from header, query, and cookie', () => {
   assert.ok(src.includes('security.isAuthorized(req)'), 'Server delegates auth to Security module');
 });
 
+test('Cross-origin API requests retain token header compatibility', () => {
+  const html = require('fs').readFileSync('./public/index.html', 'utf8');
+  assert.ok(html.includes("headers['x-mobile-typer-token'] = token"), 'cross-origin fetches send the legacy auth header');
+  assert.ok(html.includes("delete headers['x-mobile-typer-token']"), 'same-origin fetches prefer the HttpOnly session');
+});
+
 test('All required route handlers are defined', () => {
   const src = require('fs').readFileSync('./server.js', 'utf8');
   const routes = [

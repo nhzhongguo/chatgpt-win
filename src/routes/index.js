@@ -75,7 +75,7 @@ function corsHeaders(req) {
   }
   const headers = {
     'access-control-allow-methods': 'GET,POST,OPTIONS',
-    'access-control-allow-headers': 'content-type,x-mobile-typer-token',
+    'access-control-allow-headers': 'content-type,x-mobile-typer-token,x-codex-session',
     'access-control-allow-private-network': 'true',
     'x-content-type-options': 'nosniff',
     'referrer-policy': 'no-referrer',

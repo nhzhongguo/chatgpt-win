@@ -11,6 +11,7 @@ class Security {
     this.token = options.initialToken || '';
     this.appName = options.appName || 'ChatGPT Win';
     this.store = options.store || null;
+    this.sessionManager = options.sessionManager || null;
 
     // Rate limiting
     this.RATE_LIMIT_RPM = Math.max(10, Math.min(6000, Number(process.env.CODEX_MAX_RATE_LIMIT_RPM) || 120));
@@ -39,7 +40,19 @@ class Security {
 
   // ---- Auth ----
 
+  sessionTokenFromRequest(req) {
+    if (!this.sessionManager) return '';
+    const fromCookie = this._parseCookies(req.headers.cookie || '').codexMiniSession;
+    const fromHeader = req.headers['x-codex-session'];
+    return fromCookie || fromHeader || '';
+  }
+
+  sessionFromRequest(req) {
+    return this.sessionManager ? this.sessionManager.validateSession(this.sessionTokenFromRequest(req)) : null;
+  }
+
   isAuthorized(req) {
+    if (this.sessionFromRequest(req)) return true;
     const { URL } = require('url');
     const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
     const fromHeader = req.headers['x-mobile-typer-token'];
@@ -97,6 +110,7 @@ class Security {
 
   destroy() {
     if (this._cleanupTimer) clearInterval(this._cleanupTimer);
+    if (this.sessionManager?.destroy) this.sessionManager.destroy();
     this.rateLimitBuckets.clear();
   }
 }
