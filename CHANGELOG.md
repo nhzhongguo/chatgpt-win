@@ -1,5 +1,11 @@
 # Changelog
 
+# Unreleased
+
+- Chore: rename the user-facing project and desktop/mobile application branding to Codex Remote Bridge
+- Chore: update package metadata, documentation, PWA metadata, build outputs, and installer names
+- Compatibility: preserve legacy ChatGPT Win/Codex Max configuration paths, installer lookup, and web route aliases
+
 # 4.0.0 (2026-08-02)
 
 - Feat: 路由分发中枢 - server.js 的 if 链替换为 Router 模块（精确/前缀/静态/405 统一分发）

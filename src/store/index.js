@@ -154,12 +154,18 @@ class Store {
   syncLauncherToken(token) {
     if (process.platform !== 'win32') return;
     try {
-      const launcherPath = path.join(os.homedir(), 'AppData', 'Roaming', 'ChatGPT Win', 'launcher.json');
-      if (!fs.existsSync(launcherPath)) return;
-      const config = JSON.parse(fs.readFileSync(launcherPath, 'utf8'));
-      if (config && typeof config === 'object' && config.token !== token) {
-        config.token = token;
-        fs.writeFileSync(launcherPath, JSON.stringify(config, null, 2), 'utf8');
+      const launcherPaths = [
+        path.join(os.homedir(), 'AppData', 'Roaming', 'Codex Remote Bridge', 'launcher.json'),
+        path.join(os.homedir(), 'AppData', 'Roaming', 'ChatGPT Win', 'launcher.json'),
+        path.join(os.homedir(), 'AppData', 'Roaming', 'Codex Max', 'launcher.json'),
+      ];
+      for (const launcherPath of launcherPaths) {
+        if (!fs.existsSync(launcherPath)) continue;
+        const config = JSON.parse(fs.readFileSync(launcherPath, 'utf8'));
+        if (config && typeof config === 'object' && config.token !== token) {
+          config.token = token;
+          fs.writeFileSync(launcherPath, JSON.stringify(config, null, 2), 'utf8');
+        }
       }
     } catch {}
   }

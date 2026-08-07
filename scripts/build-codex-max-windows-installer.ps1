@@ -7,7 +7,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot '..')
-$payloadDir = Join-Path $repoRoot 'dist\windows\ChatGPT Win InstallerPayload'
+$payloadDir = Join-Path $repoRoot 'dist\windows\Codex Remote Bridge InstallerPayload'
 $installerDir = Join-Path $repoRoot 'dist\windows\installer'
 
 $buildArgs = @{

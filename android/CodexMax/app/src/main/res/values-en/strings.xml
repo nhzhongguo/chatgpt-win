@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">ChatGPT AZ</string>
+    <string name="app_name">Codex Remote Bridge</string>
     <string name="app_subtitle">Remote control for ChatGPT on your computer</string>
     <string name="language_toggle">中文</string>
     <string name="language_toggle_description">Switch to Chinese</string>
     <string name="mobile_connect_badge">Local connection</string>
-    <string name="mobile_hero_title">Scan your computer QR code\nConnect to this ChatGPT</string>
+    <string name="mobile_hero_title">Scan your computer QR code\nConnect to this Codex</string>
     <string name="mobile_hero_subtitle">Keep the desktop console open and connect your phone and computer to the same Wi-Fi to control Codex from your phone.</string>
     <string name="mobile_scan_ready">Ready to scan</string>
     <string name="mobile_scan_card_title">Computer connection</string>
@@ -44,14 +44,14 @@
     <string name="screen_fit_auto_selected">Adjusted automatically for the status bar and cutout on this device</string>
     <string name="screen_fit_fullscreen_selected">Full-screen extension enabled</string>
     <string name="notification_permission_denied">Notifications are off, so task completion alerts will not be shown</string>
-    <string name="monitor_title">ChatGPT AZ connected</string>
+    <string name="monitor_title">Codex Remote Bridge connected</string>
     <string name="monitor_connecting">Monitoring task status</string>
     <string name="monitor_channel">Connection status</string>
     <string name="monitor_channel_description">Keeps the task-status connection to your computer</string>
     <string name="result_channel">Task completion alerts</string>
     <string name="task_completed">Codex task completed</string>
     <string name="task_failed">Codex task failed</string>
-    <string name="tap_to_open">Tap to return to ChatGPT AZ</string>
+    <string name="tap_to_open">Tap to return to Codex Remote Bridge</string>
     <string name="update_available">A new version v%1$s is available. Download it now?</string>
     <string name="update_download">Download</string>
     <string name="service_health_title">Service health check</string>

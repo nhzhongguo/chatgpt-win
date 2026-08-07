@@ -328,8 +328,8 @@ class CodexAppServer {
     try {
       await this.requestRaw('initialize', {
         clientInfo: {
-          name: 'chatgpt_win',
-          title: 'ChatGPT Win',
+          name: 'codex_remote_bridge',
+          title: 'Codex Remote Bridge',
           version: '3.1.0',
         },
         capabilities: {

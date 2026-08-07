@@ -32,7 +32,7 @@ cat > "$PLIST" <<PLIST
   <key>EnvironmentVariables</key><dict>
     <key>MOBILE_TYPER_TOKEN</key><string>$TOKEN</string>
     <key>PORT</key><string>$PORT</string>
-    <key>CODEX_MINI_APP_NAME</key><string>Codex Mini</string>
+    <key>CODEX_MINI_APP_NAME</key><string>Codex Remote Bridge</string>
   </dict>
   <key>ProgramArguments</key><array><string>$NODE</string><string>$PROJECT_DIR/server.js</string></array>
   <key>RunAtLoad</key><true/>
@@ -46,5 +46,5 @@ launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true
 launchctl bootstrap "gui/$(id -u)" "$PLIST"
 launchctl kickstart -k "gui/$(id -u)/$LABEL"
 
-echo "Installed and started Codex Mini local service."
+echo "Installed and started Codex Remote Bridge local service."
 echo "Local URL: http://localhost:$PORT/?token=$TOKEN"

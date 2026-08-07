@@ -45,9 +45,9 @@ internal sealed record CdpLaunchSnapshot(
 
 internal sealed class ServiceManager
 {
-    private const string DisplayName = "ChatGPT Win";
-    private const string AppDataName = "ChatGPT Win";
-    private const string LegacyAppDataName = "Codex Max";
+    private const string DisplayName = "Codex Remote Bridge";
+    private const string AppDataName = "Codex Remote Bridge";
+    private static readonly string[] LegacyAppDataNames = { "ChatGPT Win", "Codex Max" };
     private const int DefaultPort = 8787;
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -57,7 +57,7 @@ internal sealed class ServiceManager
 
     private readonly HttpClient http = new() { Timeout = TimeSpan.FromSeconds(2) };
     private readonly string appDataDir;
-    private readonly string legacyAppDataDir;
+    private readonly string[] legacyAppDataDirs;
     private readonly string logsDir;
     private readonly string installDir;
     private readonly string configPath;
@@ -71,7 +71,9 @@ internal sealed class ServiceManager
     public ServiceManager()
     {
         appDataDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), AppDataName);
-        legacyAppDataDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), LegacyAppDataName);
+        legacyAppDataDirs = LegacyAppDataNames
+            .Select(name => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), name))
+            .ToArray();
         logsDir = Path.Combine(appDataDir, "logs");
         installDir = Path.Combine(appDataDir, "service");
         configPath = Path.Combine(appDataDir, "launcher.json");
@@ -259,10 +261,14 @@ internal sealed class ServiceManager
     private void MigrateLegacyStateIfNeeded()
     {
         if (File.Exists(configPath)) return;
-        var legacyConfigPath = Path.Combine(legacyAppDataDir, "launcher.json");
-        if (!File.Exists(legacyConfigPath)) return;
-        Directory.CreateDirectory(appDataDir);
-        File.Copy(legacyConfigPath, configPath, overwrite: false);
+        foreach (var legacyAppDataDir in legacyAppDataDirs)
+        {
+            var legacyConfigPath = Path.Combine(legacyAppDataDir, "launcher.json");
+            if (!File.Exists(legacyConfigPath)) continue;
+            Directory.CreateDirectory(appDataDir);
+            File.Copy(legacyConfigPath, configPath, overwrite: false);
+            return;
+        }
     }
 
     public void OpenAndroidApkLocation()
@@ -495,11 +501,15 @@ internal sealed class ServiceManager
 
     private string ResolveWindowsInstallerPath()
     {
-        var sourceCandidate = Path.Combine(sourceProjectDir, "dist", "windows", "installer", "ChatGPT-Win-Windows-Setup.exe");
-        if (File.Exists(sourceCandidate)) return sourceCandidate;
-        var baseCandidate = Path.Combine(AppContext.BaseDirectory, "dist", "windows", "installer", "ChatGPT-Win-Windows-Setup.exe");
-        if (File.Exists(baseCandidate)) return baseCandidate;
-        return sourceCandidate;
+        var names = new[] { "Codex-Remote-Bridge-Windows-Setup.exe", "ChatGPT-Win-Windows-Setup.exe" };
+        foreach (var name in names)
+        {
+            var sourceCandidate = Path.Combine(sourceProjectDir, "dist", "windows", "installer", name);
+            if (File.Exists(sourceCandidate)) return sourceCandidate;
+            var baseCandidate = Path.Combine(AppContext.BaseDirectory, "dist", "windows", "installer", name);
+            if (File.Exists(baseCandidate)) return baseCandidate;
+        }
+        return Path.Combine(sourceProjectDir, "dist", "windows", "installer", names[0]);
     }
 
     private string ResolveAndroidApkPath()
@@ -726,6 +736,7 @@ internal sealed class ServiceManager
             var commandLine = GetProcessCommandLine(pid);
             if (commandLine.Contains("server.js", StringComparison.OrdinalIgnoreCase)) return true;
             if (commandLine.Contains("CodexMaxProject", StringComparison.OrdinalIgnoreCase)) return true;
+            if (commandLine.Contains("Codex Remote Bridge", StringComparison.OrdinalIgnoreCase)) return true;
             if (commandLine.Contains("ChatGPT Win", StringComparison.OrdinalIgnoreCase)) return true;
             if (commandLine.Contains("Codex Max", StringComparison.OrdinalIgnoreCase)) return true;
             return false;

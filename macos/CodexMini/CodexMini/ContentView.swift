@@ -35,7 +35,7 @@ struct ContentView: View {
             LinearGradient(colors: [.appBackground, .appSurface], startPoint: .topLeading, endPoint: .bottomTrailing)
         )
         .foregroundStyle(.appTextPrimary)
-        .alert("Codex Mini", isPresented: $service.showAlert) {
+        .alert("Codex Remote Bridge", isPresented: $service.showAlert) {
             Button("好") {}
         } message: {
             Text(service.alertMessage)

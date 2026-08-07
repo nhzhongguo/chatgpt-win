@@ -1,6 +1,6 @@
-# ChatGPT Win App
+# Codex Remote Bridge Windows App
 
-This folder contains the Windows client wrapper for the local ChatGPT Win service.
+This folder contains the Windows client wrapper for the local Codex Remote Bridge service.
 It mirrors the macOS app responsibilities:
 
 - prepare the local service payload

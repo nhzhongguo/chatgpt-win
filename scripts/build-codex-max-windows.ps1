@@ -8,7 +8,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot '..')
 if (-not $OutputDir) {
-  $OutputDir = Join-Path $repoRoot 'dist\windows\ChatGPT Win'
+  $OutputDir = Join-Path $repoRoot 'dist\windows\Codex Remote Bridge'
 }
 
 function Get-DotnetCli {
@@ -89,7 +89,7 @@ if ((-not $SingleExe) -and $NodePath -and (Test-Path -LiteralPath $NodePath)) {
 }
 
 if ($SingleExe) {
-  Get-ChildItem -LiteralPath $OutputDir -Force | Where-Object { $_.Name -ne 'ChatGPT Win.exe' } | Remove-Item -Recurse -Force
+  Get-ChildItem -LiteralPath $OutputDir -Force | Where-Object { $_.Name -ne 'Codex Remote Bridge.exe' } | Remove-Item -Recurse -Force
 }
 
 Write-Host "Windows app output: $OutputDir"

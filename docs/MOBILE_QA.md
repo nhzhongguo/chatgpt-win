@@ -1,6 +1,6 @@
 # Mobile QA Baseline
 
-ChatGPT AZ 的主要使用场景是手机。任何涉及 `public/index.html`、Android 布局或移动端样式的改动，在交付前都必须按以下基准验收。
+Codex Remote Bridge App 的主要使用场景是手机。任何涉及 `public/index.html`、Android 布局或移动端样式的改动，在交付前都必须按以下基准验收。
 
 ## Reference viewport
 

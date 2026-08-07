@@ -26,7 +26,7 @@ const { CdpWebSocketHub } = require('./src/cdp/ws-hub');
 const { Router, getClientIp, corsHeaders } = require('./src/routes');
 // json 和 readBody 使用 server.js 本地定义（包含 CORS 头和超时处理）
 
-const APP_NAME = process.env.CODEX_MAX_APP_NAME || process.env.CODEX_MINI_APP_NAME || 'ChatGPT Win';
+const APP_NAME = process.env.CODEX_MAX_APP_NAME || process.env.CODEX_MINI_APP_NAME || 'Codex Remote Bridge';
 const PORT = Number(process.env.PORT || 8787);
 const HOST = process.env.HOST || '0.0.0.0';
 const USE_HTTPS = process.env.CODEX_MAX_HTTPS === '1' || process.env.CODEX_MINI_HTTPS === '1';
@@ -52,12 +52,18 @@ function persistToken(token) {
 function syncLauncherToken(token) {
   if (process.platform !== 'win32') return;
   try {
-    const launcherPath = path.join(os.homedir(), 'AppData', 'Roaming', 'ChatGPT Win', 'launcher.json');
-    if (!fs.existsSync(launcherPath)) return;
-    const config = JSON.parse(fs.readFileSync(launcherPath, 'utf8'));
-    if (config && typeof config === 'object' && config.token !== token) {
-      config.token = token;
-      fs.writeFileSync(launcherPath, JSON.stringify(config, null, 2), 'utf8');
+    const launcherPaths = [
+      path.join(os.homedir(), 'AppData', 'Roaming', 'Codex Remote Bridge', 'launcher.json'),
+      path.join(os.homedir(), 'AppData', 'Roaming', 'ChatGPT Win', 'launcher.json'),
+      path.join(os.homedir(), 'AppData', 'Roaming', 'Codex Max', 'launcher.json'),
+    ];
+    for (const launcherPath of launcherPaths) {
+      if (!fs.existsSync(launcherPath)) continue;
+      const config = JSON.parse(fs.readFileSync(launcherPath, 'utf8'));
+      if (config && typeof config === 'object' && config.token !== token) {
+        config.token = token;
+        fs.writeFileSync(launcherPath, JSON.stringify(config, null, 2), 'utf8');
+      }
     }
   } catch {}
 }
@@ -2502,7 +2508,7 @@ function buildMarkdownExport(threadId, data) {
     '',
   ];
   for (const row of messages) {
-    const roleLabel = row?.role === 'user' ? '用户' : 'ChatGPT Win';
+    const roleLabel = row?.role === 'user' ? '用户' : 'Codex Remote Bridge';
     const time = row?.timestamp ? `（${row.timestamp}）` : '';
     lines.push(`## ${roleLabel}${time}`, '');
     const text = String(row?.text || '').replace(/\r\n/g, '\n').trim();
@@ -4701,10 +4707,15 @@ function latestAndroidApkInfo() {
 
 function latestWindowsInstallerInfo() {
   try {
-    const file = path.join(DIST_WINDOWS_INSTALLER_DIR, 'ChatGPT-Win-Windows-Setup.exe');
-    if (fs.existsSync(file)) {
+    const candidates = [
+      'Codex-Remote-Bridge-Windows-Setup.exe',
+      'ChatGPT-Win-Windows-Setup.exe',
+    ];
+    for (const name of candidates) {
+      const file = path.join(DIST_WINDOWS_INSTALLER_DIR, name);
+      if (!fs.existsSync(file)) continue;
       const stat = fs.statSync(file);
-      return { version: SERVICE_VERSION, name: 'ChatGPT-Win-Windows-Setup.exe', size: stat.size };
+      return { version: SERVICE_VERSION, name, size: stat.size };
     }
   } catch {}
   return null;
@@ -4822,7 +4833,7 @@ async function handleCdpLaunch(req, res) {
     return json(res, 400, {
       ok: false,
       code: 'CDP_LAUNCH_UNSUPPORTED',
-      message: '当前平台不支持从 ChatGPT Win 启动 CDP 受控版 ChatGPT。',
+      message: '当前平台不支持从 Codex Remote Bridge 启动 CDP 受控版 ChatGPT。',
     });
   }
 

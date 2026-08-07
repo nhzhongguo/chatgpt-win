@@ -10,7 +10,7 @@
   "engines": {
     "node": ">=18"
   },
-  "name": "chatgpt-win",
+  "name": "codex-remote-bridge",
   "version": "4.0.0",
-  "description": "Local phone-to-ChatGPT desktop bridge for Windows"
+  "description": "Local phone-to-Codex desktop bridge for Windows, macOS and Android"
 }

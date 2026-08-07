@@ -1,11 +1,11 @@
-# Codex Mini macOS App
+# Codex Remote Bridge macOS App
 
-This folder contains the SwiftUI wrapper app for the local Codex Mini service.
+This folder contains the SwiftUI wrapper app for the local Codex Remote Bridge service.
 
 The app embeds:
 
 - the Node.js runtime
-- the local Codex Mini service payload
+- the local Codex Remote Bridge service payload
 - a small control panel for starting/stopping the local LaunchAgent
 
 Build from the repository root:
@@ -17,7 +17,7 @@ Build from the repository root:
 The default output is:
 
 ```text
-/Applications/Codex Mini.app
+/Applications/Codex Remote Bridge.app
 ```
 
 You can override identifiers and paths with environment variables, for example:
@@ -25,6 +25,6 @@ You can override identifiers and paths with environment variables, for example:
 ```bash
 BUNDLE_ID=local.codex-mini.app \
 SERVICE_LABEL=codex-mini.local \
-APP_PATH="$PWD/dist/Codex Mini.app" \
+APP_PATH="$PWD/dist/Codex Remote Bridge.app" \
 ./scripts/build-codex-mini-app.sh
 ```

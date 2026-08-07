@@ -1,7 +1,7 @@
-#define MyAppName "ChatGPT Win"
+#define MyAppName "Codex Remote Bridge"
 #define MyAppVersion "3.1.1-win"
 #define MyAppPublisher "Coming Rain"
-#define MyAppExeName "ChatGPT Win.exe"
+#define MyAppExeName "Codex Remote Bridge.exe"
 
 [Setup]
 AppId={{9E6B36FA-42F5-4C4D-9B98-C377B95EE749}
@@ -12,7 +12,7 @@ DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 OutputDir=..\..\dist\windows\installer
-OutputBaseFilename=ChatGPT-Win-Windows-Setup
+OutputBaseFilename=Codex-Remote-Bridge-Windows-Setup
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
@@ -22,7 +22,7 @@ PrivilegesRequired=lowest
 UninstallDisplayIcon={app}\{#MyAppExeName}
 
 [Files]
-Source: "..\..\dist\windows\ChatGPT Win InstallerPayload\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\..\dist\windows\Codex Remote Bridge InstallerPayload\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"

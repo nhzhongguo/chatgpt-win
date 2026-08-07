@@ -51,9 +51,9 @@ final class ServiceManager: ObservableObject {
 
     init() {
         let info = Bundle.main.infoDictionary ?? [:]
-        self.appName = (info["CFBundleDisplayName"] as? String) ?? "Codex Mini"
+        self.appName = (info["CFBundleDisplayName"] as? String) ?? "Codex Remote Bridge"
         self.label = (info["CodexMiniServiceLabel"] as? String) ?? "codex-mini.local"
-        self.supportDirectoryName = (info["CodexMiniSupportDirectoryName"] as? String) ?? "Codex Mini"
+        self.supportDirectoryName = (info["CodexMiniSupportDirectoryName"] as? String) ?? "Codex Remote Bridge"
         self.defaultPort = Int((info["CodexMiniPort"] as? String) ?? "") ?? 8787
         self.port = defaultPort
     }

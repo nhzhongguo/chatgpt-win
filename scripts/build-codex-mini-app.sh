@@ -2,12 +2,12 @@
 set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-APP_NAME="${APP_NAME:-Codex Mini}"
-SCHEME_NAME="${SCHEME_NAME:-Codex Mini}"
+APP_NAME="${APP_NAME:-Codex Remote Bridge}"
+SCHEME_NAME="${SCHEME_NAME:-Codex Remote Bridge}"
 APP_PATH="${APP_PATH:-/Applications/${APP_NAME}.app}"
 BUNDLE_ID="${BUNDLE_ID:-local.codex-mini.app}"
 SERVICE_LABEL="${SERVICE_LABEL:-codex-mini.local}"
-SUPPORT_DIR_NAME="${SUPPORT_DIR_NAME:-Codex Mini}"
+SUPPORT_DIR_NAME="${SUPPORT_DIR_NAME:-Codex Remote Bridge}"
 SERVICE_PORT="${SERVICE_PORT:-8787}"
 VERSION="${VERSION:-$(/usr/bin/python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("version", "1.0.0"))' "$PROJECT_DIR/package.json")}"
 BUILD_NUMBER="${BUILD_NUMBER:-${VERSION//./}}"

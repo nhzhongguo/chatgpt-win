@@ -1,6 +1,6 @@
-# ChatGPT AZ Android
+# Codex Remote Bridge Android
 
-这是 ChatGPT Win Windows 本地服务的原生 Android 客户端，手机端名称为 ChatGPT AZ。手机和电脑位于同一局域网时，可以扫描 Windows 管理端二维码，在 App 内打开控制页并接收任务完成通知。
+这是 Codex Remote Bridge Windows 本地服务的原生 Android 客户端。手机和电脑位于同一局域网时，可以扫描 Windows 管理端二维码，在 App 内打开控制页并接收任务完成通知。
 
 ## 功能
 
@@ -35,7 +35,7 @@ $env:CODEX_MAX_ANDROID_BUILD_DIR = "C:\CodexBuild\AndroidOutput"
 
 ## 使用
 
-1. 在 Windows 上启动 `ChatGPT Win.exe`。
+1. 在 Windows 上启动 `Codex Remote Bridge.exe`。
 2. 确认手机和电脑连接同一个 Wi-Fi。
 3. 安装 APK，打开 App 并允许相机和通知权限。
 4. 扫描电脑端二维码，或输入形如 `http://192.168.x.x:8787/?token=...` 的完整地址。

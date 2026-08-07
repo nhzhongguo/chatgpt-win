@@ -1,7 +1,7 @@
 <Window x:Class="CodexMiniWin.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="ChatGPT Win"
+        Title="Codex Remote Bridge"
         Width="1080"
         Height="720"
         MinWidth="980"
@@ -142,7 +142,7 @@
                     <TextBlock Text="&#xE8EA;" FontFamily="Segoe MDL2 Assets" FontSize="25" Foreground="{StaticResource CyanBrush}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                 </Border>
                 <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                    <TextBlock Text="ChatGPT Win" FontSize="26" FontWeight="Bold" Foreground="White"/>
+                    <TextBlock Text="Codex Remote Bridge" FontSize="26" FontWeight="Bold" Foreground="White"/>
                     <TextBlock Text="Windows 连接控制台 · 让手机 App 连接本机 ChatGPT" FontSize="13" Foreground="{StaticResource SubtitleBrush}" TextTrimming="CharacterEllipsis"/>
                 </StackPanel>
                 <Border Grid.Column="2" Height="34" MinWidth="110" Padding="12,0" CornerRadius="17" Background="{StaticResource StatusOkBgBrush}" BorderBrush="{StaticResource StatusOkBorderBrush}" BorderThickness="1" VerticalAlignment="Center">
@@ -169,7 +169,7 @@
                         </Grid.RowDefinitions>
                         <StackPanel>
                             <TextBlock Text="连接手机 App" Foreground="White" FontSize="18" FontWeight="Bold"/>
-                            <TextBlock Text="在 ChatGPT AZ 中扫描二维码" Foreground="{StaticResource HintBrush}" FontSize="12" Margin="0,4,0,0"/>
+                            <TextBlock Text="在 Codex Remote Bridge App 中扫描二维码" Foreground="{StaticResource HintBrush}" FontSize="12" Margin="0,4,0,0"/>
                         </StackPanel>
                         <StackPanel Grid.Row="1" VerticalAlignment="Center" HorizontalAlignment="Center">
                             <Border Width="184" Height="184" Padding="10" CornerRadius="12" Background="{StaticResource QrBgBrush}">

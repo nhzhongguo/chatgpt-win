@@ -37,15 +37,15 @@ The output APK will be at:
 ```powershell
 # Single-file portable exe
 .\scripts\build-codex-max-windows-single-exe.ps1
-# Output: dist\windows\ChatGPT Win SingleExe\ChatGPT Win.exe
+# Output: dist\windows\Codex Remote Bridge SingleExe\Codex Remote Bridge.exe
 
 # Framework-dependent portable
 .\scripts\build-codex-max-windows-portable.ps1
-# Output: dist\windows\ChatGPT Win\ChatGPT Win.exe
+# Output: dist\windows\Codex Remote Bridge\Codex Remote Bridge.exe
 
 # Full installer (requires Inno Setup 6)
 .\scripts\build-codex-max-windows-installer.ps1
-# Output: dist\windows\installer\ChatGPT-Win-Windows-Setup.exe
+# Output: dist\windows\installer\Codex-Remote-Bridge-Windows-Setup.exe
 ```
 
 ### macOS (upstream)

@@ -9,7 +9,7 @@ const crypto = require('crypto');
 class Security {
   constructor(options = {}) {
     this.token = options.initialToken || '';
-    this.appName = options.appName || 'ChatGPT Win';
+    this.appName = options.appName || 'Codex Remote Bridge';
     this.store = options.store || null;
     this.sessionManager = options.sessionManager || null;
 

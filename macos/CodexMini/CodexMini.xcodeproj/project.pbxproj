@@ -14,7 +14,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		A10000000000000000000010 /* Codex Mini.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Codex Mini.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		A10000000000000000000010 /* Codex Remote Bridge.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Codex Remote Bridge.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		A10000000000000000000011 /* CodexMiniApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodexMiniApp.swift; sourceTree = "<group>"; };
 		A10000000000000000000012 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		A10000000000000000000013 /* ServiceManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceManager.swift; sourceTree = "<group>"; };
@@ -54,7 +54,7 @@
 		A10000000000000000000032 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				A10000000000000000000010 /* Codex Mini.app */,
+				A10000000000000000000010 /* Codex Remote Bridge.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -62,24 +62,24 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		A10000000000000000000040 /* Codex Mini */ = {
+		A10000000000000000000040 /* Codex Remote Bridge */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = A10000000000000000000070 /* Build configuration list for PBXNativeTarget "Codex Mini" */;
+			buildConfigurationList = A10000000000000000000070 /* Build configuration list for PBXNativeTarget "Codex Remote Bridge" */;
 			buildPhases = (
 				A10000000000000000000050 /* Sources */,
 				A10000000000000000000020 /* Frameworks */,
 				A10000000000000000000051 /* Resources */,
-				A10000000000000000000052 /* Embed Codex Mini Runtime */,
+				A10000000000000000000052 /* Embed Codex Remote Bridge Runtime */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 			);
-			name = "Codex Mini";
+			name = "Codex Remote Bridge";
 			packageProductDependencies = (
 			);
-			productName = "Codex Mini";
-			productReference = A10000000000000000000010 /* Codex Mini.app */;
+			productName = "Codex Remote Bridge";
+			productReference = A10000000000000000000010 /* Codex Remote Bridge.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -112,7 +112,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				A10000000000000000000040 /* Codex Mini */,
+				A10000000000000000000040 /* Codex Remote Bridge */,
 			);
 		};
 /* End PBXProject section */
@@ -129,7 +129,7 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
-		A10000000000000000000052 /* Embed Codex Mini Runtime */ = {
+		A10000000000000000000052 /* Embed Codex Remote Bridge Runtime */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
 			buildActionMask = 2147483647;
@@ -137,7 +137,7 @@
 			);
 			inputPaths = (
 			);
-			name = "Embed Codex Mini Runtime";
+			name = "Embed Codex Remote Bridge Runtime";
 			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -289,7 +289,7 @@
 				ENABLE_HARDENED_RUNTIME = NO;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = "Codex Mini";
+				INFOPLIST_KEY_CFBundleDisplayName = "Codex Remote Bridge";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_NSHighResolutionCapable = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -298,7 +298,7 @@
 				);
 				MARKETING_VERSION = 2.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "local.codex-mini.app";
-				PRODUCT_NAME = "Codex Mini";
+				PRODUCT_NAME = "Codex Remote Bridge";
 				SWIFT_VERSION = 5.0;
 			};
 			name = Debug;
@@ -314,7 +314,7 @@
 				DEVELOPMENT_TEAM = "";
 				ENABLE_HARDENED_RUNTIME = NO;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = "Codex Mini";
+				INFOPLIST_KEY_CFBundleDisplayName = "Codex Remote Bridge";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_NSHighResolutionCapable = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -323,7 +323,7 @@
 				);
 				MARKETING_VERSION = 4.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "local.codex-mini.app";
-				PRODUCT_NAME = "Codex Mini";
+				PRODUCT_NAME = "Codex Remote Bridge";
 				SWIFT_VERSION = 5.0;
 			};
 			name = Release;
@@ -340,7 +340,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		A10000000000000000000070 /* Build configuration list for PBXNativeTarget "Codex Mini" */ = {
+		A10000000000000000000070 /* Build configuration list for PBXNativeTarget "Codex Remote Bridge" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				A10000000000000000000071 /* Debug */,

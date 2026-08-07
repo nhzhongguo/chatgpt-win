@@ -1,11 +1,11 @@
 'use strict';
 
-/* ChatGPT Win - PWA Service Worker
+/* Codex Remote Bridge - PWA Service Worker
  * 策略：网络优先 + 缓存回退（本地服务响应快，断网时复用缓存）
  * 只处理同源 GET 静态资源，API 请求一律不拦截。
  */
 
-const CACHE_NAME = 'codexmax-v1';
+const CACHE_NAME = 'codex-remote-bridge-v1';
 
 const PRECACHE_URLS = [
   '.',

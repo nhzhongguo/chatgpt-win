@@ -59,7 +59,7 @@ public partial class MainWindow : Window
         await RunActionAsync(async () =>
         {
             await service.CopyLocalLinkAsync();
-            WpfMessageBox.Show(this, "已复制本机链接", "ChatGPT Win", MessageBoxButton.OK, MessageBoxImage.Information);
+            WpfMessageBox.Show(this, "已复制本机链接", "Codex Remote Bridge", MessageBoxButton.OK, MessageBoxImage.Information);
         });
         await RefreshStateAsync();
     }
@@ -75,7 +75,7 @@ public partial class MainWindow : Window
         await RunActionAsync(async () =>
         {
             var result = await service.LaunchControlledCodexAsync();
-            WpfMessageBox.Show(this, result.Message, "ChatGPT Win", MessageBoxButton.OK, MessageBoxImage.Information);
+            WpfMessageBox.Show(this, result.Message, "Codex Remote Bridge", MessageBoxButton.OK, MessageBoxImage.Information);
         });
         await RefreshStateAsync();
     }
@@ -232,7 +232,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            WpfMessageBox.Show(this, ex.Message, "ChatGPT Win", MessageBoxButton.OK, MessageBoxImage.Error);
+            WpfMessageBox.Show(this, ex.Message, "Codex Remote Bridge", MessageBoxButton.OK, MessageBoxImage.Error);
         }
         finally
         {

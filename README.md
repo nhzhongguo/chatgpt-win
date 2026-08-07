@@ -1,8 +1,8 @@
-# ChatGPT Win
+# Codex Remote Bridge
 
-> 在手机上远程操控 Windows 上的 ChatGPT / Codex Desktop，全程局域网直连、本地运行。
+> 在手机上远程操控 Windows 上的 Codex Desktop，全程局域网直连、本地运行。
 
-ChatGPT Win 是一个开源的“手机 ↔ 电脑”远程控制桥接工具：手机通过网页或 Android App 连接同一局域网内的 Windows 电脑，把文字或图片发送到电脑上正在运行的 Codex 对话中，并实时同步查看回复过程、运行状态和工具调用结果。
+Codex Remote Bridge 是一个开源的“手机 ↔ 电脑”远程控制桥接工具：手机通过网页或 Android App 连接同一局域网内的 Windows 电脑，把文字或图片发送到电脑上正在运行的 Codex 对话中，并实时同步查看回复过程、运行状态和工具调用结果。
 
 本项目基于 [CoimgRain/Codex-Mini](https://github.com/CoimgRain/Codex-Mini) 的本地桥接思路，重写了 Windows 自动化控制层，并新增 Android 原生客户端。它**不是云端聊天服务**：Codex 的登录状态、线程切换、输入和回复读取全部发生在你自己的电脑上。
 
@@ -34,13 +34,13 @@ ChatGPT Win 是一个开源的“手机 ↔ 电脑”远程控制桥接工具：
 ## 界面预览
 
 <p>
-  <img src="assets/screenshots/preview-thread-list.png" alt="ChatGPT Win 手机线程列表" width="220" />
-  <img src="assets/screenshots/preview-chat.png" alt="ChatGPT Win 手机聊天同步" width="220" />
-  <img src="assets/screenshots/mobile-reasoning-menu.png" alt="ChatGPT Win 推理模式菜单" width="220" />
+  <img src="assets/screenshots/preview-thread-list.png" alt="Codex Remote Bridge 手机线程列表" width="220" />
+  <img src="assets/screenshots/preview-chat.png" alt="Codex Remote Bridge 手机聊天同步" width="220" />
+  <img src="assets/screenshots/mobile-reasoning-menu.png" alt="Codex Remote Bridge 推理模式菜单" width="220" />
 </p>
 
 <p>
-  <img src="assets/screenshots/ipad-layout.png" alt="ChatGPT Win iPad 横屏布局" width="720" />
+  <img src="assets/screenshots/ipad-layout.png" alt="Codex Remote Bridge iPad 横屏布局" width="720" />
 </p>
 
 ---
@@ -79,12 +79,12 @@ http://192.168.x.x:8787/?token=...
 构建产物分别输出到：
 
 ```text
-dist\windows\ChatGPT Win SingleExe\ChatGPT Win.exe
-dist\windows\ChatGPT Win Portable\
-dist\windows\installer\ChatGPT-Win-Windows-Setup.exe
+dist\windows\Codex Remote Bridge SingleExe\Codex Remote Bridge.exe
+dist\windows\Codex Remote Bridge Portable\
+dist\windows\installer\Codex-Remote-Bridge-Windows-Setup.exe
 ```
 
-打开 `ChatGPT Win.exe` 后，管理面板会显示手机可访问的局域网二维码；手机扫码即可连接。
+打开 `Codex Remote Bridge.exe` 后，管理面板会显示手机可访问的局域网二维码；手机扫码即可连接。
 
 ### 方式三：安装 Android App
 

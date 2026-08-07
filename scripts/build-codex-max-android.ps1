@@ -6,7 +6,7 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot '..')
 $androidProject = Join-Path $repoRoot 'android\CodexMax'
 $signingDir = Join-Path $androidProject 'signing'
-$keystorePath = Join-Path $signingDir 'chatgpt-win-release.p12'
+  $keystorePath = Join-Path $signingDir 'codex-remote-bridge-release.p12'
 $propertiesPath = Join-Path $androidProject 'release-signing.properties'
 
 function Get-KeytoolPath {
@@ -36,12 +36,12 @@ if (-not (Test-Path -LiteralPath $propertiesPath)) {
   $keytool = Get-KeytoolPath
   $passwordBytes = [System.Security.Cryptography.RandomNumberGenerator]::GetBytes(24)
   $password = [Convert]::ToBase64String($passwordBytes).TrimEnd('=').Replace('+', 'A').Replace('/', 'B')
-  & $keytool -genkeypair -v -keystore $keystorePath -storetype PKCS12 -alias chatgpt-win-release -keyalg RSA -keysize 4096 -validity 10000 -dname 'CN=ChatGPT Win, OU=Local Release, O=ChatGPT Win, L=Local, S=Local, C=CN' -storepass $password -keypass $password
+  & $keytool -genkeypair -v -keystore $keystorePath -storetype PKCS12 -alias codex-remote-bridge-release -keyalg RSA -keysize 4096 -validity 10000 -dname 'CN=Codex Remote Bridge, OU=Local Release, O=Codex Remote Bridge, L=Local, S=Local, C=CN' -storepass $password -keypass $password
   if ($LASTEXITCODE -ne 0) { throw "keytool failed with exit code $LASTEXITCODE" }
   @(
-    'storeFile=signing/chatgpt-win-release.p12'
+    'storeFile=signing/codex-remote-bridge-release.p12'
     "storePassword=$password"
-    'keyAlias=chatgpt-win-release'
+    'keyAlias=codex-remote-bridge-release'
     "keyPassword=$password"
   ) | Set-Content -LiteralPath $propertiesPath -Encoding ASCII
 }
