@@ -150,3 +150,40 @@ test('thread management wrappers use documented App Server actions', async () =>
     },
   ]);
 });
+
+test('stale approvals and thread runtimes are pruned by TTL', () => {
+  const { server } = createServer();
+  const now = Date.now();
+  server.pendingServerRequests.set('stale-approval', {
+    id: 'stale-approval',
+    method: 'item/commandExecution/requestApproval',
+    params: { threadId: 'thread-1' },
+    receivedAt: new Date(now - 2 * 60 * 60 * 1000).toISOString(),
+  });
+  server.pendingServerRequests.set('fresh-approval', {
+    id: 'fresh-approval',
+    method: 'item/commandExecution/requestApproval',
+    params: { threadId: 'thread-1' },
+    receivedAt: new Date(now - 1000).toISOString(),
+  });
+  server.threadRuntime.set('stale-thread', {
+    threadId: 'stale-thread',
+    activeTurnId: '',
+    status: 'idle',
+    updatedAt: new Date(now - 7 * 60 * 60 * 1000).toISOString(),
+  });
+  server.threadRuntime.set('fresh-thread', {
+    threadId: 'fresh-thread',
+    activeTurnId: '',
+    status: 'idle',
+    updatedAt: new Date(now - 1000).toISOString(),
+  });
+
+  server._pruneStaleState();
+
+  assert.equal(server.pendingServerRequests.has('stale-approval'), false);
+  assert.equal(server.pendingServerRequests.has('fresh-approval'), true);
+  assert.equal(server.threadRuntime.has('stale-thread'), false);
+  assert.equal(server.threadRuntime.has('fresh-thread'), true);
+  server.close();
+});

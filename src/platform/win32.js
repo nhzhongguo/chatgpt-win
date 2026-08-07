@@ -1233,7 +1233,8 @@ function createCodexCdpController(options = {}) {
       return {
         available: false,
         port,
-        code: error.code || 'CDP_UNAVAILABLE',
+        // 连接类错误统一归为 CDP_UNAVAILABLE，避免把网络错误码暴露给客户端
+        code: /ECONNREFUSED|EHOSTUNREACH|ENOTFOUND|ETIMEDOUT|ECONNRESET/.test(error.code || '') ? 'CDP_UNAVAILABLE' : (error.code || 'CDP_UNAVAILABLE'),
         message: error.message || 'CDP 不可用。',
       };
     }
@@ -1644,6 +1645,20 @@ $started = Start-Process -FilePath $exe -ArgumentList $argsList -PassThru
     });
   }
 
+  async function captureScreenshot() {
+    return withPage(async (socket) => {
+      const result = await socket.send('Page.captureScreenshot', {
+        format: 'png',
+        captureBeyondViewport: false,
+        fromSurface: true,
+      }, timeoutMs);
+      if (!result || typeof result.data !== 'string' || !result.data) {
+        throw makeError('CDP 截图失败：未返回图像数据。', 'CDP_SCREENSHOT_EMPTY');
+      }
+      return { data: result.data, format: 'png', width: Number(result.width) || 0, height: Number(result.height) || 0 };
+    });
+  }
+
   return {
     port,
     baseUrl,
@@ -1658,6 +1673,7 @@ $started = Start-Process -FilePath $exe -ArgumentList $argsList -PassThru
     switchReasoningMode,
     pressEnter,
     stopResponse,
+    captureScreenshot,
   };
 }
 
@@ -1890,6 +1906,10 @@ module.exports = function createWin32Platform(env) {
     return cdp.probe();
   }
 
+  async function captureCdpScreenshot() {
+    return cdp.captureScreenshot();
+  }
+
   async function launchCodexCdp(options = {}) {
     return cdp.launchCodexCdp(options);
   }
@@ -2026,6 +2046,7 @@ module.exports = function createWin32Platform(env) {
     switchReasoningMode,
     cdpStatus,
     launchCodexCdp,
+    captureCdpScreenshot,
     getToolbarState,
     keepAwakeStatus,
     startKeepAwake,

@@ -242,3 +242,80 @@ test('Phase 3: /codex/status parses a real session file with since (functional r
     try { fs.rmSync(tmpRoot, { recursive: true, force: true }); } catch { /* ignore */ }
   }
 });
+
+test('Front-end persists query token for reload recovery', () => {
+  const html = require('fs').readFileSync('./public/index.html', 'utf8');
+  assert.ok(html.includes("localStorage.setItem('codexMini.token', queryToken)"), 'query token should be persisted');
+  assert.equal(html.includes("localStorage.removeItem('codexMini.token')"), false, 'query token should not be deleted');
+});
+
+test('Request body limit covers the max attachment payload', () => {
+  const src = require('fs').readFileSync('./server.js', 'utf8');
+  assert.ok(src.includes('DEFAULT_MAX_BODY_BYTES'), 'default body limit is derived from attachment limits');
+});
+
+test('Malformed percent path and Host do not crash the server', async () => {
+  const { spawn } = require('node:child_process');
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const path = require('node:path');
+  const net = require('node:net');
+
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'chatgpt-win-robust-'));
+  const port = await new Promise((resolve, reject) => {
+    const probe = net.createServer();
+    probe.listen(0, '127.0.0.1', () => { const p = probe.address().port; probe.close(() => resolve(p)); });
+    probe.on('error', reject);
+  });
+  const env = {
+    ...process.env,
+    USERPROFILE: tmpRoot,
+    HOME: tmpRoot,
+    PORT: String(port),
+    HOST: '127.0.0.1',
+    MOBILE_TYPER_TOKEN: 'robust-token',
+    CODEX_MAX_STATE_DIR: path.join(tmpRoot, '.codex-max'),
+  };
+  const child = spawn(process.execPath, ['server.js'], { env, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+  let stderr = '';
+  child.stderr.on('data', chunk => { stderr += String(chunk); });
+
+  try {
+    let healthy = false;
+    const deadline = Date.now() + 15000;
+    while (Date.now() < deadline) {
+      try {
+        const res = await fetch(`http://127.0.0.1:${port}/codex/health`);
+        if (res.ok) { healthy = true; break; }
+      } catch { /* server not up yet */ }
+      await new Promise(r => setTimeout(r, 250));
+    }
+    assert.ok(healthy, `server should start within 15s; stderr: ${stderr.slice(-500)}`);
+
+    const badPath = await fetch(`http://127.0.0.1:${port}/%ZZ`);
+    assert.equal(badPath.status, 400, `malformed percent path should return 400; stderr: ${stderr.slice(-500)}`);
+
+    const raw = await new Promise((resolve, reject) => {
+      const socket = net.connect(port, '127.0.0.1', () => {
+        socket.write('GET / HTTP/1.1\r\nHost: [\r\nConnection: close\r\n\r\n');
+      });
+      let data = '';
+      socket.on('data', chunk => { data += String(chunk); });
+      socket.on('end', () => resolve(data));
+      socket.on('error', reject);
+      setTimeout(() => { try { socket.destroy(); } catch {} resolve(data); }, 3000);
+    });
+    assert.match(raw, /^HTTP\/1\.1 400/, 'malformed Host should return 400 instead of crashing');
+
+    assert.equal(child.exitCode, null, 'server process should stay alive');
+    const health = await fetch(`http://127.0.0.1:${port}/codex/health`);
+    assert.equal(health.status, 200, 'server should still answer health after malformed requests');
+  } finally {
+    child.kill();
+    await Promise.race([
+      new Promise(resolve => child.once('exit', resolve)),
+      new Promise(resolve => setTimeout(resolve, 5000)),
+    ]);
+    try { fs.rmSync(tmpRoot, { recursive: true, force: true }); } catch { /* ignore */ }
+  }
+});

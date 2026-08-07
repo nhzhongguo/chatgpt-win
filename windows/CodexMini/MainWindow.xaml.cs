@@ -6,7 +6,6 @@ using System.Windows.Threading;
 using QRCoder;
 using WpfControl = System.Windows.Controls.Control;
 using WpfMessageBox = System.Windows.MessageBox;
-using WpfColor = System.Windows.Media.Color;
 
 namespace CodexMiniWin;
 
@@ -156,7 +155,7 @@ public partial class MainWindow : Window
         serviceRunning = snapshot.HealthOk;
         var good = (SolidColorBrush)FindResource("GreenBrush");
         var warn = (SolidColorBrush)FindResource("OrangeBrush");
-        var bad = new SolidColorBrush(WpfColor.FromRgb(255, 120, 100));
+        var bad = (SolidColorBrush)FindResource("DangerBrush");
         var statusBrush = snapshot.HealthOk ? good : snapshot.State == ServiceState.Running ? warn : bad;
         StateDot.Foreground = statusBrush;
         StateText.Foreground = statusBrush;

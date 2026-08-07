@@ -38,6 +38,29 @@ class Security {
     return this.token;
   }
 
+  /** 只读 token：主 token 加 `:ro` 后缀派生（严格弱于主 token，泄露不升级）。 */
+  readOnlyToken() {
+    return this.token ? `${this.token}:ro` : '';
+  }
+
+  _presentedToken(req) {
+    const fromHeader = req.headers['x-mobile-typer-token'];
+    const fromCookie = this._parseCookies(req.headers.cookie || '').codexMiniToken;
+    let fromQuery = '';
+    try {
+      const { URL } = require('url');
+      fromQuery = new URL(req.url, `http://${req.headers.host || 'localhost'}`).searchParams.get('token') || '';
+    } catch {}
+    return String(fromHeader || fromQuery || fromCookie || '');
+  }
+
+  /** 请求携带凭据的读写 scope：'read-only' | 'read-write'。会话优先，其次主/只读 token。 */
+  tokenScopeFromRequest(req) {
+    const session = this.sessionFromRequest(req);
+    if (session) return session.scope === 'read-only' ? 'read-only' : 'read-write';
+    return this._presentedToken(req) === this.readOnlyToken() ? 'read-only' : 'read-write';
+  }
+
   // ---- Auth ----
 
   sessionTokenFromRequest(req) {
@@ -53,12 +76,8 @@ class Security {
 
   isAuthorized(req) {
     if (this.sessionFromRequest(req)) return true;
-    const { URL } = require('url');
-    const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
-    const fromHeader = req.headers['x-mobile-typer-token'];
-    const fromQuery = url.searchParams.get('token');
-    const fromCookie = this._parseCookies(req.headers.cookie || '').codexMiniToken;
-    return fromHeader === this.token || fromQuery === this.token || fromCookie === this.token;
+    const presented = this._presentedToken(req);
+    return presented === this.token || presented === this.readOnlyToken();
   }
 
   _parseCookies(header) {

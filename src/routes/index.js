@@ -30,13 +30,38 @@ function readBody(req, maxBytes = 28 * 1024 * 1024) {
   return new Promise((resolve, reject) => {
     let size = 0;
     const chunks = [];
-    req.on('data', chunk => {
+    let settled = false;
+    const fail = error => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      req.removeListener('data', onData);
+      req.removeListener('end', onEnd);
+      req.removeListener('error', onError);
+      reject(error);
+    };
+    const onData = chunk => {
+      if (settled) return;
       size += chunk.length;
-      if (size > maxBytes) { req.destroy(); reject(Object.assign(new Error('请求体过大。'), { status: 413, code: 'BODY_TOO_LARGE' })); return; }
+      if (size > maxBytes) {
+        fail(Object.assign(new Error('请求体过大。'), { status: 413, code: 'BODY_TOO_LARGE' }));
+        req.destroy();
+        return;
+      }
       chunks.push(chunk);
-    });
-    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
-    req.on('error', reject);
+    };
+    const onEnd = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(Buffer.concat(chunks).toString('utf8'));
+    };
+    const onError = error => fail(error);
+    const timer = setTimeout(() => fail(Object.assign(new Error('请求读取超时。'), { status: 408, code: 'BODY_TIMEOUT' })), 30000);
+    if (timer.unref) timer.unref();
+    req.on('data', onData);
+    req.on('end', onEnd);
+    req.on('error', onError);
   });
 }
 
@@ -169,7 +194,13 @@ class Router {
 
   async dispatch(req, res) {
     const startTime = Date.now();
-    const { pathname } = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+    let pathname = '';
+    try {
+      pathname = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`).pathname;
+    } catch {
+      this.logger.warn('bad_request_url', { host: String(req.headers.host || '') });
+      return json(res, 400, { ok: false, code: 'BAD_URL', message: '请求地址不正确。' });
+    }
 
     // 限流（健康检查豁免，与历史行为一致；IP + token 双维度）
     if (pathname !== '/codex/health' && this.security) {
@@ -177,6 +208,14 @@ class Router {
       if (!this.security.rateLimitCheck(ip, getTokenFromRequest(req))) {
         this.logger.warn('rate_limited', { ip, path: pathname });
         return json(res, 429, { ok: false, code: 'RATE_LIMITED', message: '请求过于频繁，请稍后再试。' });
+      }
+    }
+
+    // P2-3：只读 token 拒绝写方法（GET/HEAD/OPTIONS 外一律 403）
+    if (req.method !== 'GET' && req.method !== 'HEAD' && req.method !== 'OPTIONS' && this.security?.tokenScopeFromRequest) {
+      if (this.security.tokenScopeFromRequest(req) === 'read-only') {
+        this.logger.warn('write_denied_readonly', { ip: getClientIp(req), path: pathname });
+        return json(res, 403, { ok: false, code: 'TOKEN_READ_ONLY', message: '只读令牌不能执行写操作。' });
       }
     }
 
@@ -225,15 +264,16 @@ class Router {
   // ---- 内置静态服务（未委托时使用）----
 
   _serveStatic(req, res, pathname) {
-    const filePath = path.join(this.publicDir, pathname === '/' ? 'index.html' : pathname);
-    const safePath = path.normalize(filePath).replace(/\.\./g, '');
-    if (!safePath.startsWith(this.publicDir)) {
+    const safePath = path.normalize(path.join(this.publicDir, pathname === '/' ? 'index.html' : pathname));
+    const relative = path.relative(this.publicDir, safePath);
+    if (relative.startsWith('..') || path.isAbsolute(relative)) {
       return json(res, 403, { ok: false, message: '禁止访问。' });
     }
     fs.readFile(safePath, (err, data) => {
       if (err) {
-        const distPath = path.join(this.distDir, pathname);
-        if (distPath.startsWith(this.distDir)) {
+        const distPath = path.normalize(path.join(this.distDir, pathname === '/' ? 'index.html' : pathname));
+        const distRelative = path.relative(this.distDir, distPath);
+        if (!distRelative.startsWith('..') && !path.isAbsolute(distRelative)) {
           fs.readFile(distPath, (err2, data2) => {
             if (err2) return json(res, 404, { ok: false, message: '文件不存在。' });
             const ext = path.extname(distPath).toLowerCase();

@@ -98,6 +98,10 @@ class CodexAppServer {
     this.lastError = '';
     this.lastStartedAt = '';
     this.stderrTail = [];
+    this.pendingServerRequestTtlMs = Math.max(60 * 1000, Number(process.env.CODEX_MAX_APPROVAL_TTL_MS) || 60 * 60 * 1000);
+    this.threadRuntimeTtlMs = Math.max(60 * 1000, Number(process.env.CODEX_MAX_THREAD_RUNTIME_TTL_MS) || 6 * 60 * 60 * 1000);
+    this._staleTimer = setInterval(() => this._pruneStaleState(), 60 * 1000);
+    if (this._staleTimer.unref) this._staleTimer.unref();
   }
 
   isAvailable() {
@@ -117,6 +121,22 @@ class CodexAppServer {
 
   runtimeForThread(threadId) {
     return this.threadRuntime.get(String(threadId || '')) || null;
+  }
+
+  _pruneStaleState() {
+    const now = Date.now();
+    for (const [key, request] of this.pendingServerRequests) {
+      const received = Date.parse(request?.receivedAt || '');
+      if (Number.isFinite(received) && now - received > this.pendingServerRequestTtlMs) {
+        this.pendingServerRequests.delete(key);
+      }
+    }
+    for (const [key, runtime] of this.threadRuntime) {
+      const updated = Date.parse(runtime?.updatedAt || '');
+      if (Number.isFinite(updated) && now - updated > this.threadRuntimeTtlMs) {
+        this.threadRuntime.delete(key);
+      }
+    }
   }
 
   listPendingApprovals(options = {}) {
@@ -655,6 +675,10 @@ class CodexAppServer {
   close() {
     this.initialized = false;
     this.pendingServerRequests.clear();
+    if (this._staleTimer) {
+      clearInterval(this._staleTimer);
+      this._staleTimer = null;
+    }
     if (this.reader) {
       try { this.reader.close(); } catch {}
       this.reader = null;

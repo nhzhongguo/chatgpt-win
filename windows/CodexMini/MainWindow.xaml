@@ -9,17 +9,58 @@
         MaxWidth="1220"
         MaxHeight="800"
         WindowStartupLocation="CenterScreen"
-        Background="#10131A">
+        Background="{StaticResource WindowBrush}">
     <Window.Resources>
+        <!-- 基础面板/文字层级 -->
+        <SolidColorBrush x:Key="WindowBrush" Color="#10131A"/>
         <SolidColorBrush x:Key="PanelBrush" Color="#191F2A"/>
         <SolidColorBrush x:Key="CardBrush" Color="#121821"/>
         <SolidColorBrush x:Key="BorderBrushSoft" Color="#2D3A4D"/>
+        <SolidColorBrush x:Key="CardBorderBrush" Color="#273244"/>
+        <SolidColorBrush x:Key="LinkBorderBrush" Color="#40506A"/>
         <SolidColorBrush x:Key="MutedBrush" Color="#93A1B5"/>
         <SolidColorBrush x:Key="SoftBrush" Color="#D7E0EC"/>
+        <SolidColorBrush x:Key="SubtitleBrush" Color="#8F9EB2"/>
+        <SolidColorBrush x:Key="HintBrush" Color="#91A1B4"/>
+        <SolidColorBrush x:Key="InstallHintBrush" Color="#8292A8"/>
+        <SolidColorBrush x:Key="FootnoteBrush" Color="#77869A"/>
+        <SolidColorBrush x:Key="BodyMutedBrush" Color="#8B9BB0"/>
+        <SolidColorBrush x:Key="TimeBrush" Color="#8090A4"/>
+        <SolidColorBrush x:Key="LogTextBrush" Color="#8796AA"/>
+        <SolidColorBrush x:Key="MetaMutedBrush" Color="#738399"/>
+        <SolidColorBrush x:Key="EntryUrlBrush" Color="#A9B6C8"/>
+        <SolidColorBrush x:Key="PathMutedBrush" Color="#66778D"/>
+        <SolidColorBrush x:Key="UrlBrush" Color="#8493A8"/>
+
+        <!-- 服务状态语义色（与 Web/Android 保持一致） -->
         <SolidColorBrush x:Key="CyanBrush" Color="#46D9F2"/>
         <SolidColorBrush x:Key="GreenBrush" Color="#68E596"/>
         <SolidColorBrush x:Key="OrangeBrush" Color="#FFB76C"/>
         <SolidColorBrush x:Key="PurpleBrush" Color="#B99AFF"/>
+        <SolidColorBrush x:Key="DangerBrush" Color="#FF7864"/>
+
+        <!-- 状态徽章/入口 -->
+        <SolidColorBrush x:Key="IconBgBrush" Color="#123A49"/>
+        <SolidColorBrush x:Key="IconBorderBrush" Color="#2B7488"/>
+        <SolidColorBrush x:Key="StatusOkBgBrush" Color="#153B2B"/>
+        <SolidColorBrush x:Key="StatusOkBorderBrush" Color="#2A6046"/>
+        <SolidColorBrush x:Key="QrBgBrush" Color="#F7FAFF"/>
+
+        <!-- 操作按钮层级（背景/边框/前景） -->
+        <SolidColorBrush x:Key="BtnOpenWebBgBrush" Color="#1A4168"/>
+        <SolidColorBrush x:Key="BtnOpenWebBorderBrush" Color="#366C9F"/>
+        <SolidColorBrush x:Key="BtnOpenWebFgBrush" Color="#91C6FF"/>
+        <SolidColorBrush x:Key="BtnCdpBgBrush" Color="#163E2D"/>
+        <SolidColorBrush x:Key="BtnCdpBorderBrush" Color="#2E6E4E"/>
+        <SolidColorBrush x:Key="BtnRestartBgBrush" Color="#4A311D"/>
+        <SolidColorBrush x:Key="BtnRestartBorderBrush" Color="#885F3A"/>
+        <SolidColorBrush x:Key="BtnApkBgBrush" Color="#30254A"/>
+        <SolidColorBrush x:Key="BtnApkBorderBrush" Color="#675397"/>
+        <SolidColorBrush x:Key="BtnDiagnoseBgBrush" Color="#202A42"/>
+        <SolidColorBrush x:Key="BtnDiagnoseBorderBrush" Color="#4A5C90"/>
+        <SolidColorBrush x:Key="BtnDiagnoseFgBrush" Color="#B9C8FF"/>
+        <SolidColorBrush x:Key="BtnRefreshBgBrush" Color="#252D3A"/>
+        <SolidColorBrush x:Key="BtnRefreshBorderBrush" Color="#516075"/>
 
         <Style x:Key="PanelStyle" TargetType="Border">
             <Setter Property="Background" Value="{StaticResource PanelBrush}"/>
@@ -31,7 +72,7 @@
 
         <Style x:Key="MetricCardStyle" TargetType="Border">
             <Setter Property="Background" Value="{StaticResource CardBrush}"/>
-            <Setter Property="BorderBrush" Value="#273244"/>
+            <Setter Property="BorderBrush" Value="{StaticResource CardBorderBrush}"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="CornerRadius" Value="10"/>
             <Setter Property="Padding" Value="14,12"/>
@@ -64,7 +105,7 @@
             <Setter Property="Margin" Value="8,0,0,0"/>
             <Setter Property="Foreground" Value="{StaticResource SoftBrush}"/>
             <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="BorderBrush" Value="#40506A"/>
+            <Setter Property="BorderBrush" Value="{StaticResource LinkBorderBrush}"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Cursor" Value="Hand"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
@@ -83,7 +124,7 @@
         </Style>
     </Window.Resources>
 
-    <Grid Background="#10131A">
+    <Grid Background="{StaticResource WindowBrush}">
         <Grid Margin="24">
             <Grid.RowDefinitions>
                 <RowDefinition Height="64"/>
@@ -97,14 +138,14 @@
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                <Border Width="42" Height="42" CornerRadius="12" Background="#123A49" BorderBrush="#2B7488" BorderThickness="1" VerticalAlignment="Center">
+                <Border Width="42" Height="42" CornerRadius="12" Background="{StaticResource IconBgBrush}" BorderBrush="{StaticResource IconBorderBrush}" BorderThickness="1" VerticalAlignment="Center">
                     <TextBlock Text="&#xE8EA;" FontFamily="Segoe MDL2 Assets" FontSize="25" Foreground="{StaticResource CyanBrush}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                 </Border>
                 <StackPanel Grid.Column="1" VerticalAlignment="Center">
                     <TextBlock Text="ChatGPT Win" FontSize="26" FontWeight="Bold" Foreground="White"/>
-                    <TextBlock Text="Windows 连接控制台 · 让手机 App 连接本机 ChatGPT" FontSize="13" Foreground="#8F9EB2" TextTrimming="CharacterEllipsis"/>
+                    <TextBlock Text="Windows 连接控制台 · 让手机 App 连接本机 ChatGPT" FontSize="13" Foreground="{StaticResource SubtitleBrush}" TextTrimming="CharacterEllipsis"/>
                 </StackPanel>
-                <Border Grid.Column="2" Height="34" MinWidth="110" Padding="12,0" CornerRadius="17" Background="#153B2B" BorderBrush="#2A6046" BorderThickness="1" VerticalAlignment="Center">
+                <Border Grid.Column="2" Height="34" MinWidth="110" Padding="12,0" CornerRadius="17" Background="{StaticResource StatusOkBgBrush}" BorderBrush="{StaticResource StatusOkBorderBrush}" BorderThickness="1" VerticalAlignment="Center">
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                         <TextBlock x:Name="StateDot" Text="●" Foreground="{StaticResource GreenBrush}" FontSize="12" Margin="0,0,8,0"/>
                         <TextBlock x:Name="StateText" Text="运行中" Foreground="{StaticResource GreenBrush}" FontWeight="Bold" FontSize="12"/>
@@ -128,18 +169,18 @@
                         </Grid.RowDefinitions>
                         <StackPanel>
                             <TextBlock Text="连接手机 App" Foreground="White" FontSize="18" FontWeight="Bold"/>
-                            <TextBlock Text="在 ChatGPT AZ 中扫描二维码" Foreground="#91A1B4" FontSize="12" Margin="0,4,0,0"/>
+                            <TextBlock Text="在 ChatGPT AZ 中扫描二维码" Foreground="{StaticResource HintBrush}" FontSize="12" Margin="0,4,0,0"/>
                         </StackPanel>
                         <StackPanel Grid.Row="1" VerticalAlignment="Center" HorizontalAlignment="Center">
-                            <Border Width="184" Height="184" Padding="10" CornerRadius="12" Background="#F7FAFF">
+                            <Border Width="184" Height="184" Padding="10" CornerRadius="12" Background="{StaticResource QrBgBrush}">
                                 <Image x:Name="QrImage" Stretch="Uniform" RenderOptions.BitmapScalingMode="NearestNeighbor"/>
                             </Border>
-                            <Border Height="28" Margin="0,12,0,0" Padding="12,0" CornerRadius="14" Background="#153B2B" BorderBrush="#2A6046" BorderThickness="1" HorizontalAlignment="Center">
+                            <Border Height="28" Margin="0,12,0,0" Padding="12,0" CornerRadius="14" Background="{StaticResource StatusOkBgBrush}" BorderBrush="{StaticResource StatusOkBorderBrush}" BorderThickness="1" HorizontalAlignment="Center">
                                 <TextBlock x:Name="PhoneQrStatus" Text="入口就绪 / 等待手机" Foreground="{StaticResource GreenBrush}" FontSize="11" FontWeight="Bold" VerticalAlignment="Center"/>
                             </Border>
                         </StackPanel>
                         <StackPanel Grid.Row="2">
-                            <TextBlock x:Name="QrUrl" Foreground="#8493A8" FontFamily="Consolas" FontSize="10" TextAlignment="Center" TextWrapping="Wrap" MaxHeight="32" TextTrimming="CharacterEllipsis"/>
+                            <TextBlock x:Name="QrUrl" Foreground="{StaticResource UrlBrush}" FontFamily="Consolas" FontSize="10" TextAlignment="Center" TextWrapping="Wrap" MaxHeight="32" TextTrimming="CharacterEllipsis"/>
                             <Button x:Name="CopyLinkButton" Style="{StaticResource LinkButtonStyle}" Margin="0,12,0,0" Content="&#xE71B; 复制连接地址" Click="CopyLink_Click"/>
                         </StackPanel>
                     </Grid>
@@ -162,21 +203,21 @@
                                 <StackPanel>
                                     <TextBlock Text="服务状态" Foreground="{StaticResource MutedBrush}" FontSize="11" FontWeight="Bold"/>
                                     <TextBlock x:Name="HttpValue" Text="-" Foreground="{StaticResource GreenBrush}" FontSize="22" FontWeight="Bold" Margin="0,4,0,0"/>
-                                    <TextBlock x:Name="HttpFootnote" Text="健康检查" Foreground="#77869A" FontSize="11" TextTrimming="CharacterEllipsis"/>
+                                    <TextBlock x:Name="HttpFootnote" Text="健康检查" Foreground="{StaticResource FootnoteBrush}" FontSize="11" TextTrimming="CharacterEllipsis"/>
                                 </StackPanel>
                             </Border>
                             <Border Grid.Column="1" Style="{StaticResource MetricCardStyle}">
                                 <StackPanel>
                                     <TextBlock Text="手机入口" Foreground="{StaticResource MutedBrush}" FontSize="11" FontWeight="Bold"/>
                                     <TextBlock x:Name="PhoneValue" Text="待扫码" Foreground="{StaticResource CyanBrush}" FontSize="22" FontWeight="Bold" Margin="0,4,0,0"/>
-                                    <TextBlock x:Name="PhoneFootnote" Text="扫描二维码连接" Foreground="#77869A" FontSize="11" TextTrimming="CharacterEllipsis"/>
+                                    <TextBlock x:Name="PhoneFootnote" Text="扫描二维码连接" Foreground="{StaticResource FootnoteBrush}" FontSize="11" TextTrimming="CharacterEllipsis"/>
                                 </StackPanel>
                             </Border>
                             <Border Grid.Column="2" Style="{StaticResource MetricCardStyle}" Margin="0">
                                 <StackPanel>
                                     <TextBlock Text="本机服务" Foreground="{StaticResource MutedBrush}" FontSize="11" FontWeight="Bold"/>
                                     <TextBlock x:Name="PortValue" Text="8787" Foreground="{StaticResource PurpleBrush}" FontSize="22" FontWeight="Bold" Margin="0,4,0,0"/>
-                                    <TextBlock x:Name="PortFootnote" Text="等待监听" Foreground="#77869A" FontSize="11" TextTrimming="CharacterEllipsis"/>
+                                    <TextBlock x:Name="PortFootnote" Text="等待监听" Foreground="{StaticResource FootnoteBrush}" FontSize="11" TextTrimming="CharacterEllipsis"/>
                                 </StackPanel>
                             </Border>
                         </Grid>
@@ -192,22 +233,22 @@
                             <Grid>
                                 <StackPanel>
                                     <TextBlock Text="电脑端控制" Foreground="White" FontSize="18" FontWeight="Bold"/>
-                                    <TextBlock Text="服务只在本机运行，手机扫码后通过局域网连接" Foreground="#8B9BB0" FontSize="12" Margin="0,4,0,0"/>
+                                    <TextBlock Text="服务只在本机运行，手机扫码后通过局域网连接" Foreground="{StaticResource BodyMutedBrush}" FontSize="12" Margin="0,4,0,0"/>
                                 </StackPanel>
-                                <TextBlock x:Name="UpdatedAt" HorizontalAlignment="Right" VerticalAlignment="Center" Foreground="#8090A4" FontFamily="Consolas" FontSize="11"/>
+                                <TextBlock x:Name="UpdatedAt" HorizontalAlignment="Right" VerticalAlignment="Center" Foreground="{StaticResource TimeBrush}" FontFamily="Consolas" FontSize="11"/>
                             </Grid>
                             <UniformGrid Grid.Row="1" Rows="2" Columns="3" Margin="0,16,0,14">
-                                <Button x:Name="OpenWebButton" Style="{StaticResource ActionButtonStyle}" Background="#1A4168" BorderBrush="#366C9F" Foreground="#91C6FF" Click="OpenWeb_Click"><StackPanel Orientation="Horizontal" HorizontalAlignment="Center"><TextBlock Text="&#xE774;" FontFamily="Segoe MDL2 Assets" FontSize="16" Margin="0,0,8,0"/><TextBlock Text="打开控制页" FontSize="12"/></StackPanel></Button>
-                                <Button x:Name="LaunchCdpButton" Style="{StaticResource ActionButtonStyle}" Background="#163E2D" BorderBrush="#2E6E4E" Foreground="{StaticResource GreenBrush}" Click="LaunchCdp_Click"><StackPanel Orientation="Horizontal" HorizontalAlignment="Center"><TextBlock Text="&#xE768;" FontFamily="Segoe MDL2 Assets" FontSize="16" Margin="0,0,8,0"/><TextBlock Text="打开 ChatGPT" FontSize="12"/></StackPanel></Button>
-                                <Button x:Name="RestartButton" Style="{StaticResource ActionButtonStyle}" Background="#4A311D" BorderBrush="#885F3A" Foreground="{StaticResource OrangeBrush}" Click="Restart_Click"><StackPanel Orientation="Horizontal" HorizontalAlignment="Center"><TextBlock Text="&#xE72C;" FontFamily="Segoe MDL2 Assets" FontSize="16" Margin="0,0,8,0"/><TextBlock Text="重启服务" FontSize="12"/></StackPanel></Button>
-                                <Button x:Name="OpenApkButton" Style="{StaticResource ActionButtonStyle}" Background="#30254A" BorderBrush="#675397" Foreground="{StaticResource PurpleBrush}" Click="OpenApk_Click"><StackPanel Orientation="Horizontal" HorizontalAlignment="Center"><TextBlock Text="&#xE8B7;" FontFamily="Segoe MDL2 Assets" FontSize="16" Margin="0,0,8,0"/><TextBlock Text="获取 Android App" FontSize="12"/></StackPanel></Button>
-                                <Button x:Name="LanDiagnosticButton" Style="{StaticResource ActionButtonStyle}" Background="#202A42" BorderBrush="#4A5C90" Foreground="#B9C8FF" Click="LanDiagnostic_Click"><StackPanel Orientation="Horizontal" HorizontalAlignment="Center"><TextBlock Text="&#xE774;" FontFamily="Segoe MDL2 Assets" FontSize="16" Margin="0,0,8,0"/><TextBlock Text="局域网诊断" FontSize="12"/></StackPanel></Button>
-                                <Button x:Name="RefreshButton" Style="{StaticResource ActionButtonStyle}" Background="#252D3A" BorderBrush="#516075" Foreground="{StaticResource SoftBrush}" Click="Refresh_Click"><StackPanel Orientation="Horizontal" HorizontalAlignment="Center"><TextBlock Text="&#xE895;" FontFamily="Segoe MDL2 Assets" FontSize="16" Margin="0,0,8,0"/><TextBlock Text="刷新状态" FontSize="12"/></StackPanel></Button>
+                                <Button x:Name="OpenWebButton" Style="{StaticResource ActionButtonStyle}" Background="{StaticResource BtnOpenWebBgBrush}" BorderBrush="{StaticResource BtnOpenWebBorderBrush}" Foreground="{StaticResource BtnOpenWebFgBrush}" Click="OpenWeb_Click"><StackPanel Orientation="Horizontal" HorizontalAlignment="Center"><TextBlock Text="&#xE774;" FontFamily="Segoe MDL2 Assets" FontSize="16" Margin="0,0,8,0"/><TextBlock Text="打开控制页" FontSize="12"/></StackPanel></Button>
+                                <Button x:Name="LaunchCdpButton" Style="{StaticResource ActionButtonStyle}" Background="{StaticResource BtnCdpBgBrush}" BorderBrush="{StaticResource BtnCdpBorderBrush}" Foreground="{StaticResource GreenBrush}" Click="LaunchCdp_Click"><StackPanel Orientation="Horizontal" HorizontalAlignment="Center"><TextBlock Text="&#xE768;" FontFamily="Segoe MDL2 Assets" FontSize="16" Margin="0,0,8,0"/><TextBlock Text="打开 ChatGPT" FontSize="12"/></StackPanel></Button>
+                                <Button x:Name="RestartButton" Style="{StaticResource ActionButtonStyle}" Background="{StaticResource BtnRestartBgBrush}" BorderBrush="{StaticResource BtnRestartBorderBrush}" Foreground="{StaticResource OrangeBrush}" Click="Restart_Click"><StackPanel Orientation="Horizontal" HorizontalAlignment="Center"><TextBlock Text="&#xE72C;" FontFamily="Segoe MDL2 Assets" FontSize="16" Margin="0,0,8,0"/><TextBlock Text="重启服务" FontSize="12"/></StackPanel></Button>
+                                <Button x:Name="OpenApkButton" Style="{StaticResource ActionButtonStyle}" Background="{StaticResource BtnApkBgBrush}" BorderBrush="{StaticResource BtnApkBorderBrush}" Foreground="{StaticResource PurpleBrush}" Click="OpenApk_Click"><StackPanel Orientation="Horizontal" HorizontalAlignment="Center"><TextBlock Text="&#xE8B7;" FontFamily="Segoe MDL2 Assets" FontSize="16" Margin="0,0,8,0"/><TextBlock Text="获取 Android App" FontSize="12"/></StackPanel></Button>
+                                <Button x:Name="LanDiagnosticButton" Style="{StaticResource ActionButtonStyle}" Background="{StaticResource BtnDiagnoseBgBrush}" BorderBrush="{StaticResource BtnDiagnoseBorderBrush}" Foreground="{StaticResource BtnDiagnoseFgBrush}" Click="LanDiagnostic_Click"><StackPanel Orientation="Horizontal" HorizontalAlignment="Center"><TextBlock Text="&#xE774;" FontFamily="Segoe MDL2 Assets" FontSize="16" Margin="0,0,8,0"/><TextBlock Text="局域网诊断" FontSize="12"/></StackPanel></Button>
+                                <Button x:Name="RefreshButton" Style="{StaticResource ActionButtonStyle}" Background="{StaticResource BtnRefreshBgBrush}" BorderBrush="{StaticResource BtnRefreshBorderBrush}" Foreground="{StaticResource SoftBrush}" Click="Refresh_Click"><StackPanel Orientation="Horizontal" HorizontalAlignment="Center"><TextBlock Text="&#xE895;" FontFamily="Segoe MDL2 Assets" FontSize="16" Margin="0,0,8,0"/><TextBlock Text="刷新状态" FontSize="12"/></StackPanel></Button>
                             </UniformGrid>
                             <DockPanel Grid.Row="2">
                                 <StackPanel>
-                                    <TextBlock Text="Android App 安装后即可扫描左侧二维码连接；APK 不会在 Windows 上直接运行。" Foreground="#8292A8" FontSize="11"/>
-                                    <TextBlock x:Name="InstallPath" Foreground="#66778D" FontFamily="Consolas" FontSize="10" TextTrimming="CharacterEllipsis" MaxWidth="520"/>
+                                    <TextBlock Text="Android App 安装后即可扫描左侧二维码连接；APK 不会在 Windows 上直接运行。" Foreground="{StaticResource InstallHintBrush}" FontSize="11"/>
+                                    <TextBlock x:Name="InstallPath" Foreground="{StaticResource PathMutedBrush}" FontFamily="Consolas" FontSize="10" TextTrimming="CharacterEllipsis" MaxWidth="520"/>
                                 </StackPanel>
                                 <Button x:Name="OpenInstallerButton" DockPanel.Dock="Right" Style="{StaticResource LinkButtonStyle}" Content="Windows 安装包" Click="OpenInstaller_Click"/>
                             </DockPanel>
@@ -226,11 +267,11 @@
                     </Grid.ColumnDefinitions>
                     <StackPanel VerticalAlignment="Center">
                         <TextBlock Text="运行详情" Foreground="White" FontSize="13" FontWeight="Bold"/>
-                        <TextBlock x:Name="LogPreview" Foreground="#8796AA" FontSize="11" TextTrimming="CharacterEllipsis" Margin="0,4,0,0"/>
+                        <TextBlock x:Name="LogPreview" Foreground="{StaticResource LogTextBrush}" FontSize="11" TextTrimming="CharacterEllipsis" Margin="0,4,0,0"/>
                     </StackPanel>
                     <StackPanel Grid.Column="1" VerticalAlignment="Center" HorizontalAlignment="Right">
-                        <TextBlock x:Name="EntryKind" Foreground="#738399" FontSize="10" HorizontalAlignment="Right"/>
-                        <TextBlock x:Name="EntryUrl" Foreground="#A9B6C8" FontFamily="Consolas" FontSize="10" TextTrimming="CharacterEllipsis" Width="300" TextAlignment="Right"/>
+                        <TextBlock x:Name="EntryKind" Foreground="{StaticResource MetaMutedBrush}" FontSize="10" HorizontalAlignment="Right"/>
+                        <TextBlock x:Name="EntryUrl" Foreground="{StaticResource EntryUrlBrush}" FontFamily="Consolas" FontSize="10" TextTrimming="CharacterEllipsis" Width="300" TextAlignment="Right"/>
                     </StackPanel>
                     <Button x:Name="OpenLogsButton" Grid.Column="2" Style="{StaticResource LinkButtonStyle}" Content="打开日志" Click="OpenLogs_Click" VerticalAlignment="Center"/>
                     <Button x:Name="StartStopButton" Grid.Column="3" Style="{StaticResource LinkButtonStyle}" Content="停止" Click="StartStop_Click" VerticalAlignment="Center"/>

@@ -137,19 +137,28 @@ internal sealed class ServiceManager
         var healthOk = await CheckHealthAsync(config);
         if (healthOk && !string.IsNullOrWhiteSpace(config.ServiceStamp) && config.ServiceStamp == serviceStamp && !ServiceProcessNeedsRestart(config.Pid, serverPath)) return;
 
+        var requestedPort = config.Port;
         var existingPid = FindPortOwnerPid(config.Port);
         if (existingPid > 0)
         {
             if (existingPid != config.Pid || !IsManagedServiceProcess(existingPid))
             {
-                throw new InvalidOperationException(
-                    $"端口 {config.Port} 已被其他程序占用（PID {existingPid}）。" +
-                    $"为避免结束不是本管理端启动的进程，{DisplayName} 已取消启动。"
-                );
+                var fallbackPort = FindAvailablePort(requestedPort + 1, 10);
+                if (fallbackPort == 0)
+                {
+                    throw new InvalidOperationException(
+                        $"端口 {requestedPort} 已被其他程序占用（PID {existingPid}），且未找到可用的备用端口。"
+                    );
+                }
+                config.Port = fallbackPort;
+                WriteConfig(config);
+                existingPid = 0;
             }
-
-            await KillProcessTreeAsync(existingPid);
-            await Task.Delay(500);
+            else
+            {
+                await KillProcessTreeAsync(existingPid);
+                await Task.Delay(500);
+            }
         }
 
         if (!File.Exists(serverPath))
@@ -340,10 +349,22 @@ internal sealed class ServiceManager
     {
         try
         {
-            using var response = await http.GetAsync($"http://127.0.0.1:{config.Port}/codex/health?token={Uri.EscapeDataString(config.Token)}");
+            // /codex/health 不校验 token，健康状态必须走需鉴权的 /codex/config
+            using var response = await http.GetAsync($"http://127.0.0.1:{config.Port}/codex/config?token={Uri.EscapeDataString(config.Token)}");
             if (!response.IsSuccessStatusCode) return new HealthSnapshot(false, "");
-            var health = await response.Content.ReadFromJsonAsync<HealthResponse>(JsonOptions);
-            return new HealthSnapshot(health?.Ok == true, health?.ControlMode ?? "");
+            var payload = await response.Content.ReadFromJsonAsync<ClientConfigResponse>(JsonOptions);
+            if (payload?.Ok != true) return new HealthSnapshot(false, "");
+            var controlMode = "";
+            try
+            {
+                using var healthResponse = await http.GetAsync($"http://127.0.0.1:{config.Port}/codex/health");
+                var health = await healthResponse.Content.ReadFromJsonAsync<HealthResponse>(JsonOptions);
+                controlMode = health?.ControlMode ?? "";
+            }
+            catch
+            {
+            }
+            return new HealthSnapshot(true, controlMode);
         }
         catch
         {
@@ -536,11 +557,19 @@ internal sealed class ServiceManager
             }
             var target = Path.GetFullPath(Path.Combine(appDataDir, relative));
             var appDataRoot = Path.GetFullPath(appDataDir);
-            if (!target.StartsWith(appDataRoot, StringComparison.OrdinalIgnoreCase)) continue;
+            if (!IsWithinDirectory(appDataRoot, target)) continue;
             Directory.CreateDirectory(Path.GetDirectoryName(target)!);
             entry.ExtractToFile(target, overwrite: true);
         }
         return true;
+    }
+
+    private static bool IsWithinDirectory(string root, string target)
+    {
+        var rootPrefix = root.EndsWith(Path.DirectorySeparatorChar.ToString(), StringComparison.Ordinal)
+            ? root
+            : root + Path.DirectorySeparatorChar;
+        return target.StartsWith(rootPrefix, StringComparison.OrdinalIgnoreCase);
     }
 
     private string ReadLogPreview()
@@ -676,6 +705,17 @@ internal sealed class ServiceManager
         return 0;
     }
 
+    private static int FindAvailablePort(int startPort, int maxTries)
+    {
+        for (var i = 0; i < maxTries; i++)
+        {
+            var candidate = startPort + i;
+            if (candidate < 1 || candidate > 65535) break;
+            if (FindPortOwnerPid(candidate) == 0) return candidate;
+        }
+        return 0;
+    }
+
     private static bool IsManagedServiceProcess(int pid)
     {
         try
@@ -786,6 +826,9 @@ internal sealed class ServiceManager
 
     private sealed class ClientConfigResponse
     {
+        [JsonPropertyName("ok")]
+        public bool Ok { get; set; }
+
         [JsonPropertyName("update")]
         public UpdateInfo? Update { get; set; }
     }

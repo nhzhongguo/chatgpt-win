@@ -39,6 +39,7 @@ data class ConnectionState(
     val screen: Screen = Screen.Connection,
     val pageProgress: Int = 0,
     val pageProgressVisible: Boolean = false,
+    val browserError: String? = null,
     val updateInfo: UpdateInfo? = null,
     val promptedUpdateVersion: String? = null,
     val snackbarMessage: String? = null,
@@ -158,6 +159,7 @@ class ConnectionStateViewModel(
                 pageProgress = 0,
                 showStatus = false,
                 statusMessage = "",
+                browserError = null,
             )
         }
         return true
@@ -171,6 +173,7 @@ class ConnectionStateViewModel(
     fun disconnect() {
         _state.update {
             it.copy(
+                browserError = null,
                 activeConnection = null,
                 screen = Screen.Connection,
                 pageProgress = 0,
@@ -199,16 +202,35 @@ class ConnectionStateViewModel(
         checkForUpdate(connection)
     }
 
+    /** WebView 加载失败时保留在浏览器页，层内展示错误视图，由用户选择重试或回到连接页 */
     fun onConnectionFailed(message: String) {
         _state.update {
             it.copy(
+                browserError = message,
+                pageProgress = 0,
+                pageProgressVisible = false,
+            )
+        }
+    }
+
+    /** 清除层内错误视图（重试前调用） */
+    fun clearBrowserError() {
+        _state.update { it.copy(browserError = null) }
+    }
+
+    /** 回到连接页；若有失败信息则带到连接页状态栏展示 */
+    fun backToConnection() {
+        val error = _state.value.browserError
+        _state.update {
+            it.copy(
+                browserError = null,
                 activeConnection = null,
                 screen = Screen.Connection,
                 pageProgress = 0,
                 pageProgressVisible = false,
-                showStatus = true,
-                statusMessage = message,
-                statusIsError = true,
+                showStatus = !error.isNullOrBlank(),
+                statusMessage = error ?: "",
+                statusIsError = !error.isNullOrBlank(),
             )
         }
     }

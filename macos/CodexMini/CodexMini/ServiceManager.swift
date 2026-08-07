@@ -68,12 +68,13 @@ final class ServiceManager: ObservableObject {
     private var embeddedNodeURL: URL { Bundle.main.resourceURL!.appendingPathComponent("node/node") }
     private var domain: String { "gui/\(getuid())" }
 
+    // 状态色与 Web/Android 语义一致：健康=绿、运行中=琥珀、错误/离线=红、未知=灰
     var statusColor: Color {
-        if healthOK { return .green }
+        if healthOK { return .appSuccess }
         switch state {
-        case .running: return .yellow
-        case .stopped, .unloaded, .notInstalled: return .red
-        case .unknown: return .orange
+        case .running: return .appTertiary
+        case .stopped, .unloaded, .notInstalled: return .appDanger
+        case .unknown: return .appTextTertiary
         }
     }
 
@@ -110,9 +111,9 @@ final class ServiceManager: ObservableObject {
         do {
             try prepareInstallation()
             if !launchctlPrintAvailable() {
-                _ = try? run("/bin/launchctl", ["bootstrap", domain, plistURL.path])
+                _ = try run("/bin/launchctl", ["bootstrap", domain, plistURL.path])
             }
-            _ = try? run("/bin/launchctl", ["kickstart", "-k", "\(domain)/\(label)"])
+            _ = try run("/bin/launchctl", ["kickstart", "-k", "\(domain)/\(label)"])
             try await Task.sleep(nanoseconds: 700_000_000)
             await refresh()
         } catch {
@@ -219,7 +220,7 @@ final class ServiceManager: ObservableObject {
 
     private func checkHealth() async -> Bool {
         guard let token = readTokenFromPlist(),
-              let url = URL(string: "http://127.0.0.1:\(port)/codex/health?token=\(token)") else { return false }
+              let url = URL(string: "http://127.0.0.1:\(port)/codex/config?token=\(token)") else { return false }
         do {
             let (_, response) = try await URLSession.shared.data(from: url)
             return (response as? HTTPURLResponse)?.statusCode == 200

@@ -67,10 +67,15 @@ function rotateAccessToken() {
   return TOKEN;
 }
 const PUBLIC_DIR = path.join(__dirname, 'public');
-const MAX_BODY_BYTES = Number(process.env.CODEX_MAX_MAX_BODY_BYTES || process.env.CODEX_MINI_MAX_BODY_BYTES || 28 * 1024 * 1024);
 const MAX_TEXT_LENGTH = 8000;
 const MAX_ATTACHMENTS = 6;
 const MAX_ATTACHMENT_BYTES = Number(process.env.CODEX_MAX_MAX_ATTACHMENT_BYTES || process.env.CODEX_MINI_MAX_ATTACHMENT_BYTES || 8 * 1024 * 1024);
+// 请求体上限需能容纳 6 张 base64 图片（base64 约放大 4/3），避免单图合法但组合被 413
+const DEFAULT_MAX_BODY_BYTES = Math.max(28 * 1024 * 1024, Math.ceil(MAX_ATTACHMENTS * MAX_ATTACHMENT_BYTES * 4 / 3) + 1024 * 1024);
+const MAX_BODY_BYTES = Number(process.env.CODEX_MAX_MAX_BODY_BYTES || process.env.CODEX_MINI_MAX_BODY_BYTES || DEFAULT_MAX_BODY_BYTES);
+const MAX_DOWNLOAD_BYTES = Number(process.env.CODEX_MAX_MAX_DOWNLOAD_BYTES || process.env.CODEX_MINI_MAX_DOWNLOAD_BYTES || 20 * 1024 * 1024);
+const MAX_SCREENSHOT_BYTES = Number(process.env.CODEX_MAX_MAX_SCREENSHOT_BYTES || process.env.CODEX_MINI_MAX_SCREENSHOT_BYTES || 8 * 1024 * 1024);
+const SCREENSHOT_CACHE_TTL_MS = Math.max(500, Number(process.env.CODEX_MAX_SCREENSHOT_CACHE_MS || 5000));
 const UPLOAD_DIR = path.join(os.tmpdir(), 'codex-max-uploads');
 const HISTORY_ATTACHMENT_TTL_MS = 60 * 60 * 1000;
 const HISTORY_ATTACHMENT_LIMIT = 600;
@@ -217,6 +222,8 @@ const pullRequestCache = new Map();
 const historyAttachmentCache = new Map();
 const historyAttachmentIdByPath = new Map(); // filePath -> id 反向索引（O(1) 查找，替代每次 O(n) 全表扫描）
 
+const screenshotCache = new Map(); // `${port}:${targetUrl}` -> { data, width, height, capturedAt }
+const screenshotCacheBusy = new Map(); // 并发去重：同一 target 同时只有一个真实截图在途
 function fileCacheSignature(stat) {
   return stat ? `${stat.size}:${stat.mtimeMs}` : '';
 }
@@ -277,6 +284,13 @@ function labelFromModelName(name = '') {
     .replace(/^gpt-/i, '')
     .replace(/^codex-/i, '')
     .trim() || text;
+}
+
+function normalizeSupportedReasoningEfforts(value) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map(item => typeof item === 'string' ? item : String(item?.reasoningEffort || item?.id || item?.value || ''))
+    .filter(Boolean);
 }
 
 function normalizeModelOption(row = {}) {
@@ -1796,6 +1810,10 @@ async function handleEnvironment(req, res) {
     browser: {
       available: Boolean(cdp?.available),
       port: Number(cdp?.port) || 9222,
+      screenshot: {
+        available: Boolean(cdp?.available && typeof platform.captureCdpScreenshot === 'function'),
+        maxAgeMs: SCREENSHOT_CACHE_TTL_MS,
+      },
       message: cdp?.available ? 'CDP 浏览器已连接' : '当前没有连接桌面浏览器',
       tabs: [],
     },
@@ -1809,6 +1827,8 @@ async function handleEnvironment(req, res) {
       canCommit: Boolean(git.available && git.branch),
       canPush: Boolean(git.available && git.branch && git.remote),
       canCheckout: Boolean(git.available && (git.localBranches || git.branches).length),
+      canDownload: Boolean(projects.length),
+      downloadLimit: MAX_DOWNLOAD_BYTES,
     },
     limitation: '提交、推送和切换分支都会在这台电脑上执行，并要求手机端再次确认。',
     updatedAt: new Date().toISOString(),
@@ -2081,45 +2101,140 @@ function readTailLinesWithLimit(file, maxBytes) {
   }
 }
 
-function countCodexHistoryMessages(lines, maxNeeded = MAX_HISTORY_MESSAGES) {
-  let count = 0;
+function scanCodexThreadHistoryLines(lines, limit = MAX_HISTORY_MESSAGES, threadId = '') {
+  // 单遍扫描：每行只 JSON.parse 一次；滚动窗口只保留最近 limit 条消息（等价于旧实现的 slice(-limit)）
+  const normalizedLimit = Math.max(1, Math.min(Number(limit) || MAX_HISTORY_MESSAGES, MAX_HISTORY_MESSAGES));
+  const messages = [];
   let currentTurn = null;
-  const need = Math.max(1, Math.min(Number(maxNeeded) || MAX_HISTORY_MESSAGES, MAX_HISTORY_MESSAGES));
+  let count = 0;
+
+  function historyDurationText(startedAt = '', completedAt = '') {
+    const startMs = Date.parse(startedAt || '');
+    const endMs = Date.parse(completedAt || '');
+    if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs < startMs) return '';
+    const total = Math.max(0, Math.floor((endMs - startMs) / 1000));
+    const minutes = Math.floor(total / 60);
+    const seconds = total % 60;
+    return minutes ? `${minutes}m ${seconds}s` : `${seconds}s`;
+  }
+
+  function historyCompleteLabel(startedAt = '', completedAt = '') {
+    const duration = historyDurationText(startedAt, completedAt);
+    return duration ? `Codex · 已处理 ${duration}` : 'Codex';
+  }
+
+  function historyFailureLabel(startedAt = '', completedAt = '') {
+    const duration = historyDurationText(startedAt, completedAt);
+    return duration ? `Codex · 失败 ${duration}` : 'Codex';
+  }
+
+  function pushMessage(message) {
+    messages.push(message);
+    count += 1;
+    if (messages.length <= normalizedLimit) return;
+    messages.shift();
+    if (currentTurn) {
+      currentTurn.assistantIndex = currentTurn.assistantIndex > 0 ? currentTurn.assistantIndex - 1 : -1;
+    }
+  }
+
   for (const line of lines) {
     let item;
     try { item = JSON.parse(line); } catch { continue; }
     const payload = item.payload || {};
+
     if (item.type === 'event_msg' && payload.type === 'task_started') {
-      currentTurn = { hasAssistant: false };
+      currentTurn = { hasAssistant: false, assistantIndex: -1, failureText: '', startedAt: item.timestamp || '', turnId: payload.turn_id || '' };
       continue;
     }
+
+    if (currentTurn && item.type === 'event_msg') {
+      currentTurn.failureText = currentTurn.failureText || extractFailureTextFromPayload(payload);
+    }
+
+    if (currentTurn && item.type === 'turn_context') {
+      currentTurn.turnId = payload.turn_id || currentTurn.turnId;
+    }
+
     if (item.type === 'event_msg' && payload.type === 'user_message') {
       const text = cleanUserHistoryText(payload.message);
       const attachments = extractUserAttachments(payload);
-      if (text || attachments.length) count += 1;
-    } else if (item.type === 'response_item' && payload.type === 'message' && payload.role === 'assistant' && payload.phase === 'final_answer') {
+      if (text || attachments.length) {
+        pushMessage({
+          role: 'user',
+          label: attachments.length ? `你 · ${attachments.length} 张图片` : '你',
+          text: text || (attachments.length ? ' ' : ''),
+          attachments: attachments.map(historyAttachmentDescriptor).filter(Boolean),
+          timestamp: item.timestamp || '',
+        });
+      }
+      continue;
+    }
+
+    if (item.type === 'response_item' && payload.type === 'message' && payload.role === 'assistant') {
+      if (payload.phase !== 'final_answer') continue;
       const text = normalizeHistoryText(extractMessageText(payload.content));
       if (text) {
-        count += 1;
-        if (currentTurn) currentTurn.hasAssistant = true;
+        pushMessage({
+          role: 'assistant',
+          label: 'Codex',
+          text,
+          timestamp: item.timestamp || '',
+        });
+        if (currentTurn) {
+          currentTurn.hasAssistant = true;
+          currentTurn.assistantIndex = messages.length - 1;
+        }
       }
-    } else if (item.type === 'event_msg' && payload.type === 'task_complete') {
+      continue;
+    }
+
+    if (item.type === 'event_msg' && payload.type === 'task_complete') {
       const lastMessage = normalizeHistoryText(payload.last_agent_message || '');
-      if (currentTurn && !currentTurn.hasAssistant) count += lastMessage ? 1 : 0;
-      currentTurn = null;
-    } else if (item.type === 'event_msg' && isTerminalFailurePayload(payload)) {
-      if (currentTurn && !currentTurn.hasAssistant) count += 1;
+      const completedAt = item.timestamp || '';
+      if (currentTurn && !currentTurn.hasAssistant) {
+        const failureText = resolveFailureTextForTurn(threadId, {
+          turnId: currentTurn.turnId || '',
+          startedAt: currentTurn.startedAt || '',
+          completedAt,
+          failureText: currentTurn.failureText || '',
+        });
+        pushMessage({
+          role: 'assistant',
+          label: failureText ? historyFailureLabel(currentTurn.startedAt, completedAt) : historyCompleteLabel(currentTurn.startedAt, completedAt),
+          text: lastMessage || failureText || emptyCodexFailureText(),
+          timestamp: completedAt || currentTurn.startedAt || '',
+        });
+      } else if (currentTurn && currentTurn.hasAssistant && currentTurn.assistantIndex >= 0 && messages[currentTurn.assistantIndex]) {
+        messages[currentTurn.assistantIndex].label = historyCompleteLabel(currentTurn.startedAt, completedAt);
+      }
       currentTurn = null;
     }
-    if (count >= need) return count;
+
+    if (item.type === 'event_msg' && isTerminalFailurePayload(payload)) {
+      const failureText = normalizeHistoryText(extractFailureTextFromPayload(payload) || currentTurn?.failureText || '');
+      if (currentTurn && !currentTurn.hasAssistant) {
+        pushMessage({
+          role: 'assistant',
+          label: historyFailureLabel(currentTurn.startedAt, item.timestamp || ''),
+          text: failureText || emptyCodexFailureText(),
+          timestamp: item.timestamp || currentTurn.startedAt || '',
+        });
+      } else if (currentTurn && currentTurn.hasAssistant && currentTurn.assistantIndex >= 0 && messages[currentTurn.assistantIndex]) {
+        messages[currentTurn.assistantIndex].label = historyFailureLabel(currentTurn.startedAt, item.timestamp || '');
+      }
+      currentTurn = null;
+    }
   }
-  return count;
+
+  return { messages, count };
 }
 
-function readHistoryLinesAdaptive(file, desiredMessages = MAX_HISTORY_MESSAGES) {
+function readHistoryTailLines(file, limit = MAX_HISTORY_MESSAGES, threadId = '') {
+  // 自适应读取：小文件直接读尾；大文件先读初始尾部，不足 limit 条消息才扩大到完整上限
   const stat = fs.statSync(file);
   const maxBytes = Math.min(stat.size, CODEX_HISTORY_TAIL_BYTES);
-  const desired = Math.max(1, Math.min(Number(desiredMessages) || MAX_HISTORY_MESSAGES, MAX_HISTORY_MESSAGES));
+  const desired = Math.max(1, Math.min(Number(limit) || MAX_HISTORY_MESSAGES, MAX_HISTORY_MESSAGES));
 
   if (maxBytes <= CODEX_HISTORY_INITIAL_TAIL_BYTES * 6) {
     return { lines: readTailLinesWithLimit(file, maxBytes), stat, scannedBytes: maxBytes };
@@ -2127,7 +2242,7 @@ function readHistoryLinesAdaptive(file, desiredMessages = MAX_HISTORY_MESSAGES) 
 
   const initialBytes = Math.min(CODEX_HISTORY_INITIAL_TAIL_BYTES, maxBytes);
   const initialLines = readTailLinesWithLimit(file, initialBytes);
-  if (countCodexHistoryMessages(initialLines, desired) >= desired) {
+  if (scanCodexThreadHistoryLines(initialLines, desired, threadId).count >= desired) {
     return { lines: initialLines, stat, scannedBytes: initialBytes };
   }
 
@@ -2189,116 +2304,9 @@ function parseCodexThreadHistory(threadId, limit = MAX_HISTORY_MESSAGES) {
     };
   }
 
-  const messages = [];
-  let currentTurn = null;
-  function historyDurationText(startedAt = '', completedAt = '') {
-    const startMs = Date.parse(startedAt || '');
-    const endMs = Date.parse(completedAt || '');
-    if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs < startMs) return '';
-    const total = Math.max(0, Math.floor((endMs - startMs) / 1000));
-    const minutes = Math.floor(total / 60);
-    const seconds = total % 60;
-    return minutes ? `${minutes}m ${seconds}s` : `${seconds}s`;
-  }
-  function historyCompleteLabel(startedAt = '', completedAt = '') {
-    const duration = historyDurationText(startedAt, completedAt);
-    return duration ? `Codex · 已处理 ${duration}` : 'Codex';
-  }
-  function historyFailureLabel(startedAt = '', completedAt = '') {
-    const duration = historyDurationText(startedAt, completedAt);
-    return duration ? `Codex · 失败 ${duration}` : 'Codex';
-  }
-  const historyTail = readHistoryLinesAdaptive(file, limit);
-  for (const line of historyTail.lines) {
-    let item;
-    try { item = JSON.parse(line); } catch { continue; }
-    const payload = item.payload || {};
-
-    if (item.type === 'event_msg' && payload.type === 'task_started') {
-      currentTurn = { hasAssistant: false, assistantIndex: -1, failureText: '', startedAt: item.timestamp || '', turnId: payload.turn_id || '' };
-      continue;
-    }
-
-    if (currentTurn && item.type === 'event_msg') {
-      currentTurn.failureText = currentTurn.failureText || extractFailureTextFromPayload(payload);
-    }
-
-    if (currentTurn && item.type === 'turn_context') {
-      currentTurn.turnId = payload.turn_id || currentTurn.turnId;
-    }
-
-    if (item.type === 'event_msg' && payload.type === 'user_message') {
-      const text = cleanUserHistoryText(payload.message);
-      const attachments = extractUserAttachments(payload);
-      if (text || attachments.length) {
-        messages.push({
-          role: 'user',
-          label: attachments.length ? `你 · ${attachments.length} 张图片` : '你',
-          text: text || (attachments.length ? ' ' : ''),
-          attachments: attachments.map(historyAttachmentDescriptor).filter(Boolean),
-          timestamp: item.timestamp || '',
-        });
-      }
-      continue;
-    }
-
-    if (item.type === 'response_item' && payload.type === 'message' && payload.role === 'assistant') {
-      const isFinal = payload.phase === 'final_answer';
-      if (!isFinal) continue;
-      const text = normalizeHistoryText(extractMessageText(payload.content));
-      if (text) {
-        const assistantIndex = messages.length;
-        messages.push({
-          role: 'assistant',
-          label: 'Codex',
-          text,
-          timestamp: item.timestamp || '',
-        });
-        if (currentTurn) {
-          currentTurn.hasAssistant = true;
-          currentTurn.assistantIndex = assistantIndex;
-        }
-      }
-      continue;
-    }
-
-    if (item.type === 'event_msg' && payload.type === 'task_complete') {
-      const lastMessage = normalizeHistoryText(payload.last_agent_message || '');
-      const completedAt = item.timestamp || '';
-      if (currentTurn && !currentTurn.hasAssistant) {
-        const failureText = resolveFailureTextForTurn(threadId, {
-          turnId: currentTurn.turnId || '',
-          startedAt: currentTurn.startedAt || '',
-          completedAt,
-          failureText: currentTurn.failureText || '',
-        });
-        messages.push({
-          role: 'assistant',
-          label: failureText ? historyFailureLabel(currentTurn.startedAt, completedAt) : historyCompleteLabel(currentTurn.startedAt, completedAt),
-          text: lastMessage || failureText || emptyCodexFailureText(),
-          timestamp: completedAt || currentTurn.startedAt || '',
-        });
-      } else if (currentTurn && currentTurn.hasAssistant && currentTurn.assistantIndex >= 0 && messages[currentTurn.assistantIndex]) {
-        messages[currentTurn.assistantIndex].label = historyCompleteLabel(currentTurn.startedAt, completedAt);
-      }
-      currentTurn = null;
-    }
-
-    if (item.type === 'event_msg' && isTerminalFailurePayload(payload)) {
-      const failureText = normalizeHistoryText(extractFailureTextFromPayload(payload) || currentTurn?.failureText || '');
-      if (currentTurn && !currentTurn.hasAssistant) {
-        messages.push({
-          role: 'assistant',
-          label: historyFailureLabel(currentTurn.startedAt, item.timestamp || ''),
-          text: failureText || emptyCodexFailureText(),
-          timestamp: item.timestamp || currentTurn.startedAt || '',
-        });
-      } else if (currentTurn && currentTurn.hasAssistant && currentTurn.assistantIndex >= 0 && messages[currentTurn.assistantIndex]) {
-        messages[currentTurn.assistantIndex].label = historyFailureLabel(currentTurn.startedAt, item.timestamp || '');
-      }
-      currentTurn = null;
-    }
-  }
+  const normalizedLimit = Math.max(1, Math.min(Number(limit) || MAX_HISTORY_MESSAGES, MAX_HISTORY_MESSAGES));
+  const historyTail = readHistoryTailLines(file, normalizedLimit, threadId);
+  const scan = scanCodexThreadHistoryLines(historyTail.lines, normalizedLimit, threadId);
 
   return {
     ok: true,
@@ -2306,7 +2314,7 @@ function parseCodexThreadHistory(threadId, limit = MAX_HISTORY_MESSAGES) {
     threadId,
     sessionFile: path.basename(file),
     truncated: historyTail.stat.size > CODEX_HISTORY_TAIL_BYTES,
-    messages: messages.slice(-Math.max(1, Math.min(Number(limit) || MAX_HISTORY_MESSAGES, MAX_HISTORY_MESSAGES))),
+    messages: scan.messages,
   };
 }
 
@@ -4564,8 +4572,20 @@ const STATIC_CACHE_MAX_BYTES = 256 * 1024;
 const STATIC_CACHE_STAT_TTL_MS = 1000;
 
 function serveStatic(req, res) {
-  const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
-  let pathname = decodeURIComponent(url.pathname);
+  let url;
+  try {
+    url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
+  } catch {
+    res.writeHead(400, { 'content-type': 'text/plain; charset=utf-8', 'x-content-type-options': 'nosniff' });
+    return res.end('Bad Request');
+  }
+  let pathname;
+  try {
+    pathname = decodeURIComponent(url.pathname);
+  } catch {
+    res.writeHead(400, { 'content-type': 'text/plain; charset=utf-8', 'x-content-type-options': 'nosniff' });
+    return res.end('Bad Request');
+  }
   if (pathname === '/') pathname = '/index.html';
 
   const filePath = path.normalize(path.join(PUBLIC_DIR, pathname));
@@ -4642,7 +4662,7 @@ function staticHeaders(ext, url, contentLength, dataLength, req) {
     if (security.sessionFromRequest(req)) {
       headers['set-cookie'] = 'codexMiniToken=; Path=/; Max-Age=0; SameSite=Lax';
     } else {
-      const created = sessionManager.createSession(req.headers['user-agent'] || '');
+      const created = sessionManager.createSession(req.headers['user-agent'] || '', { scope: security.tokenScopeFromRequest(req) });
       headers['set-cookie'] = [sessionManager.sessionCookie(created.token), 'codexMiniToken=; Path=/; Max-Age=0; SameSite=Lax'];
     }
   }
@@ -4720,7 +4740,7 @@ async function handleClientConfig(req, res) {
       extraHeaders['set-cookie'] = [sessionManager.sessionCookie(sessionToken), 'codexMiniToken=; Path=/; Max-Age=0; SameSite=Lax'];
     }
   } else {
-    const created = sessionManager.createSession(req.headers['user-agent'] || '');
+    const created = sessionManager.createSession(req.headers['user-agent'] || '', { scope: security.tokenScopeFromRequest(req) });
     extraHeaders['set-cookie'] = [sessionManager.sessionCookie(created.token), 'codexMiniToken=; Path=/; Max-Age=0; SameSite=Lax'];
   }
   let modelOptions = readModelCatalogOptions();
@@ -4735,7 +4755,7 @@ async function handleClientConfig(req, res) {
         displayName: model.displayName || model.id,
         source: 'app-server',
         isDefault: model.isDefault === true,
-        supportedReasoningEfforts: (model.supportedReasoningEfforts || []).map(item => item.reasoningEffort).filter(Boolean),
+        supportedReasoningEfforts: normalizeSupportedReasoningEfforts(model.supportedReasoningEfforts),
       }));
       modelOptions = mergeModelOptions(modelOptions, appServerModels);
       transport = 'app-server';
@@ -4746,6 +4766,7 @@ async function handleClientConfig(req, res) {
     service: 'codex-max',
     appName: APP_NAME,
     localOnly: true,
+    scope: security.tokenScopeFromRequest(req),
     localApiBases: getLanApiBases(),
     transport,
     modelOptions,
@@ -4872,9 +4893,78 @@ function getLanUrls() {
   return [...urls];
 }
 
+const DOWNLOAD_MIME_BY_EXT = {
+  '.txt': 'text/plain; charset=utf-8',
+  '.md': 'text/markdown; charset=utf-8',
+  '.markdown': 'text/markdown; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.mjs': 'text/javascript; charset=utf-8',
+  '.cjs': 'text/javascript; charset=utf-8',
+  '.ts': 'text/plain; charset=utf-8',
+  '.html': 'text/html; charset=utf-8',
+  '.htm': 'text/html; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.csv': 'text/csv; charset=utf-8',
+  '.log': 'text/plain; charset=utf-8',
+  '.xml': 'application/xml; charset=utf-8',
+  '.yml': 'text/plain; charset=utf-8',
+  '.yaml': 'text/plain; charset=utf-8',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.svg': 'image/svg+xml',
+  '.pdf': 'application/pdf',
+  '.zip': 'application/zip',
+  '.gz': 'application/gzip',
+  '.tar': 'application/x-tar',
+};
+
+function downloadMimeFor(filePath) {
+  return DOWNLOAD_MIME_BY_EXT[path.extname(filePath).toLowerCase()] || 'application/octet-stream';
+}
+
+function downloadSafeName(fileName) {
+  return String(fileName || 'download').replace(/[\"\r\n\\/]/g, '_');
+}
+
+async function handleFileDownload(req, res) {
+  if (!isAuthorized(req)) return json(res, 401, { ok: false, code: 'UNAUTHORIZED', message: '访问令牌不正确。' });
+  const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+  const cwdValue = String(url.searchParams.get('cwd') || '').trim();
+  const relativePath = String(url.searchParams.get('file') || '').trim();
+  if (!cwdValue || !relativePath) return json(res, 400, { ok: false, code: 'BAD_REQUEST', message: '缺少 cwd 或 file 参数。' });
+  if (path.isAbsolute(relativePath)) return json(res, 403, { ok: false, code: 'DOWNLOAD_FORBIDDEN', message: '仅允许下载工作区内的相对路径文件。' });
+  const segments = relativePath.split(/[\\/]+/).filter(Boolean);
+  if (segments.includes('..')) return json(res, 403, { ok: false, code: 'DOWNLOAD_FORBIDDEN', message: '文件路径不能包含上级目录。' });
+  let workspace = { threads: [] };
+  try { workspace = await listWorkspaceThreads(160); } catch {}
+  const projects = existingProjectCwds(workspace.threads);
+  if (!projects.includes(cwdValue)) return json(res, 403, { ok: false, code: 'DOWNLOAD_FORBIDDEN', message: '目标目录不在可下载白名单内。' });
+  const resolved = path.resolve(cwdValue, relativePath);
+  const withinRoot = path.relative(cwdValue, resolved);
+  if (withinRoot.startsWith('..') || path.isAbsolute(withinRoot)) return json(res, 403, { ok: false, code: 'DOWNLOAD_FORBIDDEN', message: '文件路径超出工作区范围。' });
+  let stat;
+  try { stat = fs.lstatSync(resolved); } catch { return json(res, 404, { ok: false, code: 'DOWNLOAD_NOT_FOUND', message: '文件不存在。' }); }
+  if (!stat.isFile() || stat.isSymbolicLink()) return json(res, 403, { ok: false, code: 'DOWNLOAD_FORBIDDEN', message: '仅允许下载普通文件。' });
+  if (stat.size > MAX_DOWNLOAD_BYTES) return json(res, 413, { ok: false, code: 'DOWNLOAD_TOO_LARGE', message: `文件大小超过 ${formatBytes(MAX_DOWNLOAD_BYTES)} 上限。` });
+  const fileName = path.basename(resolved);
+  res.writeHead(200, {
+    'Content-Type': downloadMimeFor(resolved),
+    'Content-Length': stat.size,
+    'Content-Disposition': `attachment; filename="${downloadSafeName(fileName)}"`,
+    'Cache-Control': 'no-store',
+    'X-Content-Type-Options': 'nosniff',
+  });
+  fs.createReadStream(resolved).on('error', () => res.destroy()).pipe(res);
+}
+
 async function handleDownload(req, res) {
   if (!isAuthorized(req)) return json(res, 401, { ok: false, code: 'UNAUTHORIZED', message: '访问令牌不正确。' });
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+  if (String(url.searchParams.get('cwd') || '').trim()) return handleFileDownload(req, res);
   const kind = String(url.searchParams.get('file') || '');
   if (kind === 'android') {
     const info = latestAndroidApkInfo();
@@ -4949,6 +5039,78 @@ function handleHistoryAttachment(req, res) {
   }
 }
 
+async function handleScreenshot(req, res) {
+  if (!isAuthorized(req)) return json(res, 401, { ok: false, code: 'UNAUTHORIZED', message: '访问令牌不正确。' });
+  let cdp = null;
+  if (platform.cdpStatus) {
+    try { cdp = await platform.cdpStatus(); } catch (error) { cdp = { available: false, code: error.code || 'CDP_STATUS_FAILED', message: error.message || '浏览器状态读取失败。' }; }
+  }
+  if (!cdp || !cdp.available) {
+    return json(res, 503, { ok: false, available: false, code: cdp?.code || 'CDP_UNAVAILABLE', message: cdp?.message || 'CDP 不可用，无法获取屏幕截图。' });
+  }
+  if (typeof platform.captureCdpScreenshot !== 'function') {
+    return json(res, 503, { ok: false, available: false, code: 'CDP_SCREENSHOT_UNSUPPORTED', message: '当前平台不支持 CDP 截图。' });
+  }
+  const cacheKey = `${cdp.port || ''}:${cdp.targetUrl || ''}`;
+  const now = Date.now();
+  const cached = screenshotCache.get(cacheKey);
+  if (cached && now - cached.capturedAt <= SCREENSHOT_CACHE_TTL_MS) {
+    const body = Buffer.from(cached.data, 'base64');
+    res.writeHead(200, {
+      'Content-Type': 'image/png',
+      'Content-Length': body.length,
+      'Cache-Control': `private, max-age=${Math.max(1, Math.floor(SCREENSHOT_CACHE_TTL_MS / 1000))}`,
+      'X-Screenshot-Cache': 'hit',
+      'X-Content-Type-Options': 'nosniff',
+    });
+    res.end(body);
+    return;
+  }
+  // 并发去重：同一 target 的重复请求等待在途截图，避免连续点击触发多次真实捕获
+  if (screenshotCacheBusy.has(cacheKey)) {
+    try { await screenshotCacheBusy.get(cacheKey); } catch {}
+    const retried = screenshotCache.get(cacheKey);
+    if (retried) {
+      const body = Buffer.from(retried.data, 'base64');
+      res.writeHead(200, {
+        'Content-Type': 'image/png',
+        'Content-Length': body.length,
+        'Cache-Control': `private, max-age=${Math.max(1, Math.floor(SCREENSHOT_CACHE_TTL_MS / 1000))}`,
+        'X-Screenshot-Cache': 'hit',
+        'X-Content-Type-Options': 'nosniff',
+      });
+      res.end(body);
+      return;
+    }
+    return json(res, 503, { ok: false, available: false, code: 'CDP_SCREENSHOT_FAILED', message: '截图请求正在处理但结果不可用，请重试。' });
+  }
+  let shot;
+  const inflight = platform.captureCdpScreenshot().then(result => { shot = result; }, error => { shot = null; throw error; });
+  screenshotCacheBusy.set(cacheKey, inflight);
+  try {
+    await inflight;
+  } catch (error) {
+    return json(res, 502, { ok: false, available: false, code: error.code || 'CDP_SCREENSHOT_FAILED', message: error.message || '截图失败。' });
+  } finally {
+    screenshotCacheBusy.delete(cacheKey);
+  }
+  if (!shot || typeof shot.data !== 'string' || !shot.data) {
+    return json(res, 502, { ok: false, available: false, code: 'CDP_SCREENSHOT_EMPTY', message: '截图未返回图像数据。' });
+  }
+  const body = Buffer.from(shot.data, 'base64');
+  if (!body.length || body.length > MAX_SCREENSHOT_BYTES) {
+    return json(res, 502, { ok: false, available: false, code: 'CDP_SCREENSHOT_TOO_LARGE', message: '截图数据异常，请重试。' });
+  }
+  boundedSet(screenshotCache, cacheKey, { data: shot.data, width: Number(shot.width) || 0, height: Number(shot.height) || 0, capturedAt: Date.now() }, 12);
+  res.writeHead(200, {
+    'Content-Type': 'image/png',
+    'Content-Length': body.length,
+    'Cache-Control': `private, max-age=${Math.max(1, Math.floor(SCREENSHOT_CACHE_TTL_MS / 1000))}`,
+    'X-Screenshot-Cache': 'miss',
+    'X-Content-Type-Options': 'nosniff',
+  });
+  res.end(body);
+}
 // ===== 执行统计与 Webhook 通知 =====
 
 function normalizeLogRow(row = {}) {
@@ -5050,6 +5212,7 @@ const apiRouteTable = [
   { method: 'GET', prefix: '/codex/download', handler: handleDownload },
   { method: 'GET', prefix: '/codex/export', handler: handleExport },
   { method: 'GET', prefix: '/codex/search', handler: handleSearch },
+  { method: 'GET', prefix: '/codex/screenshot', handler: handleScreenshot },
   { method: 'GET', prefix: '/codex/attachment', handler: handleHistoryAttachment },
   { method: 'GET', prefix: '/codex/config', handler: handleClientConfig },
   { method: 'GET', prefix: '/codex/environment', handler: handleEnvironment },
@@ -5119,9 +5282,18 @@ if (USE_HTTPS) {
 
 // CDP WebSocket 升级处理 - 实时状态推送
 server.on('upgrade', (req, socket, head) => {
-  const { pathname } = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+  let pathname = '';
+  try {
+    pathname = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`).pathname;
+  } catch {
+    socket.destroy();
+    return;
+  }
   if (pathname === '/codex/ws') {
-    cdpWsHub.handleUpgrade(req, socket, head);
+    Promise.resolve(cdpWsHub.handleUpgrade(req, socket, head)).catch(error => {
+      logger.warn('ws_upgrade_failed', { error: error && error.message || String(error) });
+      try { socket.destroy(); } catch {}
+    });
   } else {
     socket.destroy();
   }
@@ -5165,4 +5337,11 @@ process.on('SIGTERM', () => {
   security.destroy();
   codexAppServer.close();
   process.exit(143);
+});
+
+process.on('uncaughtException', error => {
+  logger.error('uncaught_exception', { error: error && error.message || String(error), stack: error && error.stack || '' });
+});
+process.on('unhandledRejection', reason => {
+  logger.error('unhandled_rejection', { error: reason && reason.message || String(reason), stack: reason && reason.stack || '' });
 });

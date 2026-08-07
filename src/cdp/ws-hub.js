@@ -78,22 +78,33 @@ class CdpWebSocketHub {
     this.cdpConnection = getCdpConnection();
     this.cdpConnection.onStatusChange(status => {
       this.lastStatus = status;
-      this.broadcast({ type: 'cdp_status', data: status });
+      if (this.clients.size) this.broadcast({ type: 'cdp_status', data: status });
     });
+    // 只有存在客户端时才轮询，空闲时不产生后台开销
+    this._ensurePolling();
+  }
 
-    // 定期轮询 CDP 状态（即使没有事件，也推送状态更新）
+  stop() {
+    this._stopPollingIfIdle();
+    for (const client of this.clients) {
+      try { client.end(); } catch {}
+    }
+    this.clients.clear();
+  }
+
+  _ensurePolling() {
+    if (this.clients.size === 0 || this._statusPollTimer) return;
     this._statusPollTimer = setInterval(() => {
       this._pollAndBroadcast().catch(() => {});
     }, this._statusPollInterval);
     if (this._statusPollTimer.unref) this._statusPollTimer.unref();
   }
 
-  stop() {
-    if (this._statusPollTimer) { clearInterval(this._statusPollTimer); this._statusPollTimer = null; }
-    for (const client of this.clients) {
-      try { client.end(); } catch {}
+  _stopPollingIfIdle() {
+    if (this.clients.size === 0 && this._statusPollTimer) {
+      clearInterval(this._statusPollTimer);
+      this._statusPollTimer = null;
     }
-    this.clients.clear();
   }
 
   async _pollAndBroadcast() {
@@ -158,6 +169,7 @@ class CdpWebSocketHub {
 
   _addClient(socket) {
     this.clients.add(socket);
+    this._ensurePolling();
     let buffer = Buffer.alloc(0);
 
     socket.on('data', chunk => {
@@ -178,11 +190,13 @@ class CdpWebSocketHub {
 
     socket.on('close', () => {
       this.clients.delete(socket);
+      this._stopPollingIfIdle();
       this.logger.debug('ws_client_disconnected', { clients: this.clients.size });
     });
 
     socket.on('error', () => {
       this.clients.delete(socket);
+      this._stopPollingIfIdle();
     });
 
     this.logger.debug('ws_client_connected', { clients: this.clients.size });

@@ -16,6 +16,7 @@ function publicSession(record) {
     createdAt: record.createdAt,
     expiresAt: record.expiresAt,
     lastSeenAt: record.lastSeenAt,
+    scope: record.scope || 'read-write',
   };
 }
 
@@ -31,7 +32,7 @@ class SessionManager {
     if (this.cleanupTimer.unref) this.cleanupTimer.unref();
   }
 
-  createSession(deviceName = '') {
+  createSession(deviceName = '', options = {}) {
     const token = crypto.randomBytes(24).toString('base64url');
     const now = Date.now();
     const normalizedDeviceName = String(deviceName || '')
@@ -44,6 +45,7 @@ class SessionManager {
       createdAt: new Date(now).toISOString(),
       expiresAt: new Date(now + this.sessionTtlMs).toISOString(),
       lastSeenAt: new Date(now).toISOString(),
+      scope: options.scope === 'read-only' ? 'read-only' : 'read-write',
     };
 
     if (this.sessions.size >= this.maxSessions) {

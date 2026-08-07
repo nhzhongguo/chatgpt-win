@@ -47,6 +47,10 @@
       --accent-blue: #5eb4ff;
       --accent-blue-soft: #9ecbff;
       --accent-amber: #ffd68a;
+      --danger-text: #ff8a8a;
+      --skeleton-bg: rgba(255,255,255,.055);
+      --skeleton-hi: rgba(255,255,255,.14);
+      --focus-ring: var(--accent-blue);
       --composer-bg: #202020;
       --app-height: 100dvh;
       --app-top: 0px;
@@ -198,9 +202,14 @@
       background: rgba(255,214,138,.10);
     }
     .route-badge.is-offline {
-      color: #ff8a8a;
+      color: var(--danger-text);
       border-color: rgba(255,138,138,.28);
       background: rgba(255,138,138,.10);
+    }
+    .route-badge.is-readonly {
+      color: var(--accent-blue);
+      border-color: rgba(94,180,255,.32);
+      background: rgba(94,180,255,.10);
     }
     .reasoning-badge,
     .model-badge {
@@ -791,7 +800,7 @@
     }
     .thread-action-button:active { background: rgba(255,255,255,.085); transform: scale(.99); }
     .thread-action-button.is-blue { color: var(--accent-blue); background: rgba(94,180,255,.10); }
-    .thread-action-button.is-danger { color: #ff8a8a; background: rgba(255,107,107,.09); }
+    .thread-action-button.is-danger { color: var(--danger-text); background: rgba(255,107,107,.09); }
     .thread-action-button svg,
     .action-icon svg,
     .pinned-thread-icon svg,
@@ -1303,7 +1312,7 @@
     .speak-btn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
     .speak-btn.is-speaking { color: #ff5d5d; background: rgba(255, 93, 93, .14); }
     :focus-visible {
-      outline: 2px solid var(--accent-blue);
+      outline: 2px solid var(--focus-ring);
       outline-offset: 2px;
       border-radius: 4px;
     }
@@ -1800,7 +1809,7 @@
       max-height: 34px;
     }
     .notice-pill.error {
-      color: #ff8d8d;
+      color: var(--danger-text);
       border-color: rgba(255,141,141,.24);
       background: rgba(54, 24, 24, .82);
     }
@@ -2271,6 +2280,10 @@
       --muted-3: #777;
       --muted-4: #656565;
       --danger: #b42318;
+      --danger-text: var(--danger);
+      --skeleton-bg: #ececec;
+      --skeleton-hi: #e0e0e0;
+      --focus-ring: #2f80ed;
       --hover-bg: #f2f2f2;
       --composer-bottom-pad: max(14px, calc(var(--effective-safe-area-bottom) + 14px + var(--manual-safe-area-bottom)));
       --thread-composer-gap: 8px;
@@ -2281,7 +2294,7 @@
     body { -webkit-font-smoothing: antialiased; }
     button, input, textarea { font-family: inherit; letter-spacing: 0; }
     button:focus-visible, input:focus-visible, textarea:focus-visible, [tabindex]:focus-visible {
-      outline: 2px solid #2f80ed;
+      outline: 2px solid var(--focus-ring);
       outline-offset: 2px;
     }
 
@@ -2666,7 +2679,7 @@
       color: #444;
       box-shadow: 0 8px 24px rgba(0,0,0,.08);
     }
-    .notice-pill.error { border-color: #f0cccc; background: #fff7f7; color: var(--danger); }
+    .notice-pill.error { border-color: #f0cccc; background: #fff7f7; color: var(--danger-text); }
 
     body.approval-open { overflow: hidden; }
     .approval-scrim {
@@ -2748,7 +2761,7 @@
     .approval-actions .approval-once { background: var(--hover-bg); border-color: var(--panel-2); }
     .approval-actions .approval-session { border-color: var(--accent); background: var(--accent); color: #fff; }
     .approval-actions .approval-session:hover { background: #2a2a2a; }
-    .approval-actions .approval-decline { color: var(--danger); border-color: #efcfcc; }
+    .approval-actions .approval-decline { color: var(--danger-text); border-color: #efcfcc; }
     .approval-actions button:disabled { opacity: .55; cursor: wait; }
 
     .composer-shell {
@@ -2951,6 +2964,9 @@
     .environment-action-group { display: flex; align-items: center; justify-content: flex-end; gap: 5px; flex-wrap: wrap; }
     .environment-action:disabled { color: #a2a2a2; cursor: not-allowed; opacity: .72; }
     .environment-select { max-width: 170px; min-width: 0; height: 32px; padding: 0 26px 0 8px; border: 1px solid #e2e2e2; border-radius: 7px; background: #fff; color: #383838; font: inherit; font-size: 12px; }
+    .environment-download-row { display: flex; gap: 6px; align-items: center; margin: 2px 0 0 32px; }
+    .environment-download-input { flex: 1 1 auto; min-width: 0; height: 34px; padding: 0 9px; border: 1px solid #e2e2e2; border-radius: 7px; background: #fff; color: #383838; font: inherit; font-size: 12px; }
+    .environment-download-input:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
     .environment-list { display: grid; gap: 4px; margin: 3px 0 0 32px; }
     .environment-list-item { min-width: 0; display: flex; align-items: center; gap: 7px; color: #555; font-size: 12px; line-height: 1.35; }
     .environment-list-item::before { content: ''; width: 5px; height: 5px; flex: 0 0 auto; border-radius: 50%; background: #b7b7b7; }
@@ -2961,6 +2977,15 @@
     .environment-file-status { flex: 0 0 auto; color: #b46a1c; font-weight: 700; }
     .environment-file-path { min-width: 0; overflow-wrap: anywhere; }
     .environment-empty { margin: 2px 0 0 32px; color: #999; font-size: 12px; line-height: 1.45; }
+    .environment-screenshot { margin: 6px 0 0 32px; }
+    .environment-screenshot-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 34px; }
+    .environment-screenshot-body { margin-top: 4px; border: 1px solid #e2e2e2; border-radius: 8px; overflow: hidden; background: #fafafa; }
+    .environment-screenshot-state { min-height: 56px; display: grid; place-items: center; padding: 10px 12px; color: #8a8a8a; font-size: 12px; line-height: 1.45; text-align: center; }
+    .environment-screenshot-state.is-loading { color: #5f7ea8; }
+    .environment-screenshot-state.is-degraded { color: #a06a1e; background: #fdf6ea; }
+    .environment-screenshot-state.is-error { color: #c44747; background: #fdf3f2; }
+    .environment-screenshot-image { display: block; width: 100%; height: auto; max-height: 220px; object-fit: contain; background: #fff; }
+    .environment-screenshot-meta { display: flex; justify-content: space-between; gap: 8px; padding: 5px 9px; color: #949494; font-size: 11px; line-height: 1.4; }
     .environment-note { margin: 4px 0 0 32px; color: #949494; font-size: 11px; line-height: 1.45; }
     .environment-menu.is-loading::after { content: '正在读取环境信息…'; display: block; padding: 8px 0 2px 32px; color: #888; font-size: 12px; }
 
@@ -3332,8 +3357,90 @@
     .workspace-command-button:hover { background: #f4f4f4; }
     .workspace-command-button.is-primary { border-color: var(--accent); background: var(--accent); color: #fff; }
     .workspace-command-button.is-primary:hover { background: #303030; }
-    .workspace-schedule-row { grid-template-columns: minmax(0, 1fr) auto auto; }
+    .workspace-schedule-row { grid-template-columns: minmax(0, 1fr) auto; }
+    .workspace-schedule-side {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 6px;
+    }
     .workspace-schedule-actions { display: flex; align-items: center; gap: 3px; }
+    .workspace-schedule-meta {
+      max-width: 230px;
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .workspace-schedule-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      min-height: 19px;
+      padding: 0 7px;
+      border: 1px solid #dcdcdc;
+      border-radius: 999px;
+      background: #f3f3f3;
+      color: #666;
+      font-size: 11px;
+      font-weight: 620;
+      line-height: 17px;
+      white-space: nowrap;
+    }
+    .workspace-schedule-status.is-running {
+      color: #9a6700;
+      border-color: rgba(255, 193, 7, .55);
+      background: #fff6df;
+    }
+    .workspace-schedule-status.is-started {
+      color: #0e7a52;
+      border-color: rgba(21, 148, 85, .45);
+      background: #e9f9f0;
+    }
+    .workspace-schedule-status.is-error {
+      color: #b3261e;
+      border-color: rgba(255, 138, 138, .65);
+      background: #fff0f0;
+    }
+    .workspace-schedule-status.is-skipped {
+      color: #7c7c7c;
+      border-color: #dcdcdc;
+      background: #f7f7f7;
+    }
+    .workspace-schedule-status.is-paused {
+      color: #4a6da7;
+      border-color: rgba(94, 180, 255, .5);
+      background: #eef6ff;
+    }
+    .workspace-schedule-status.is-running::before {
+      content: "";
+      width: 6px;
+      height: 6px;
+      flex: 0 0 auto;
+      border-radius: 50%;
+      background: currentColor;
+      animation: workspace-status-pulse 1.1s ease-in-out infinite;
+    }
+    @keyframes workspace-status-pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: .35; transform: scale(.72); }
+    }
+    .workspace-schedule-next { color: #7c7c7c; font-size: 12px; white-space: nowrap; }
+    .workspace-row-error {
+      grid-column: 1 / -1;
+      margin-top: 5px;
+      overflow: hidden;
+      color: #b3261e;
+      font-size: 12px;
+      line-height: 1.35;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .workspace-schedule-actions .workspace-icon-button:disabled { opacity: .5; }
+    @media (prefers-reduced-motion: reduce) {
+      .workspace-schedule-status.is-running::before { animation: none; }
+    }
     .workspace-toggle {
       position: relative;
       display: inline-flex;
@@ -3438,7 +3545,7 @@
       text-align: left;
     }
     .settings-category-item:hover { background: #f4f5f6; color: var(--text-strong); }
-    .settings-category-item:focus-visible { outline: 2px solid #2f80ed; outline-offset: 2px; }
+    .settings-category-item:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
     .settings-category-group {
       margin: 13px 10px 4px;
       color: var(--muted-2);
@@ -3604,6 +3711,33 @@
     body[data-ui-theme="black-sky"] .message.assistant .bubble {
       color: #eef3fb;
     }
+    body[data-ui-theme="black-sky"] .workspace-schedule-status {
+      border-color: rgba(188, 205, 236, .22);
+      background: rgba(151, 180, 230, .10);
+      color: #aeb9cb;
+    }
+    body[data-ui-theme="black-sky"] .workspace-schedule-status.is-running {
+      color: #ffd68a;
+      border-color: rgba(255, 214, 138, .45);
+      background: rgba(255, 214, 138, .12);
+    }
+    body[data-ui-theme="black-sky"] .workspace-schedule-status.is-started {
+      color: #8ef0b7;
+      border-color: rgba(142, 240, 183, .42);
+      background: rgba(142, 240, 183, .12);
+    }
+    body[data-ui-theme="black-sky"] .workspace-schedule-status.is-error {
+      color: #ff8a8a;
+      border-color: rgba(255, 138, 138, .5);
+      background: rgba(255, 138, 138, .12);
+    }
+    body[data-ui-theme="black-sky"] .workspace-schedule-status.is-paused {
+      color: #9ecbff;
+      border-color: rgba(158, 203, 255, .45);
+      background: rgba(158, 203, 255, .12);
+    }
+    body[data-ui-theme="black-sky"] .workspace-schedule-next { color: #a9b4c6; }
+    body[data-ui-theme="black-sky"] .workspace-row-error { color: #ff8a8a; }
     body[data-ui-theme="black-sky"] .message .meta,
     body[data-ui-theme="black-sky"] .message.pending .meta,
     body[data-ui-theme="black-sky"] .process-status-line { color: #aeb9cb; }
@@ -3632,6 +3766,194 @@
     body[data-ui-theme="black-sky"] .context-status,
     body[data-ui-theme="black-sky"] .route-badge,
     body[data-ui-theme="black-sky"] .language-toggle { background: rgba(126, 151, 201, .14); }
+
+    /* ---- P0: skeleton, states, offline banner, long-list perf, mobile convergence ---- */
+    .skeleton-block {
+      position: relative;
+      overflow: hidden;
+      border-radius: 6px;
+      background: var(--skeleton-bg);
+    }
+    .skeleton-block::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      transform: translateX(-100%);
+      background: linear-gradient(90deg, transparent, var(--skeleton-hi), transparent);
+      animation: skeletonShimmer 1.3s ease-in-out infinite;
+    }
+    @keyframes skeletonShimmer { to { transform: translateX(100%); } }
+    @media (prefers-reduced-motion: reduce) {
+      .skeleton-block::after { animation: none; }
+    }
+
+    .thread-skeleton-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 46px;
+      gap: 10px;
+      align-items: center;
+      padding: 12px 12px 12px 40px;
+    }
+    .thread-skeleton-row .skeleton-block { height: 13px; }
+    .thread-skeleton-row .skeleton-block.is-condensed { width: 46px; height: 11px; justify-self: end; }
+    .thread-skeleton-row.is-conversation { padding-left: 12px; }
+
+    .message.is-skeleton .bubble {
+      padding: 11px 13px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: var(--skeleton-bg);
+    }
+    .message.is-skeleton .bubble .skeleton-block { margin-bottom: 8px; }
+    .message.is-skeleton .bubble .skeleton-block:last-child { margin-bottom: 0; width: 62% !important; }
+    .message.is-skeleton .meta .skeleton-block { margin-bottom: 0; }
+
+    .thread-menu-error { padding: 18px 12px 14px; color: var(--muted); font-size: 13px; line-height: 1.5; }
+    .thread-menu-error-title { color: var(--danger-text); font-weight: 650; margin-bottom: 4px; }
+    .thread-menu-error-detail { margin-bottom: 10px; overflow-wrap: anywhere; }
+    .thread-menu-error-retry {
+      appearance: none;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--panel-2);
+      color: var(--text);
+      padding: 6px 14px;
+      font: inherit;
+      font-size: 12.5px;
+      font-weight: 650;
+      cursor: pointer;
+      touch-action: manipulation;
+    }
+
+    .offline-banner {
+      position: fixed;
+      left: 50%;
+      transform: translateX(-50%);
+      top: calc(var(--effective-safe-area-top) + var(--topbar-row-height) + 8px);
+      z-index: 89;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      max-width: calc(100vw - 32px);
+      padding: 7px 12px;
+      border: 1px solid rgba(255,138,138,.32);
+      border-radius: 999px;
+      background: rgba(43,22,22,.94);
+      color: var(--danger-text);
+      font-size: 12.5px;
+      box-shadow: 0 10px 30px rgba(0,0,0,.25);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+    }
+    .offline-banner[hidden] { display: none; }
+    .offline-banner svg {
+      width: 16px;
+      height: 16px;
+      flex: 0 0 auto;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 1.8;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+    .offline-banner-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .offline-banner-retry {
+      appearance: none;
+      flex: 0 0 auto;
+      border: 1px solid rgba(255,138,138,.45);
+      border-radius: 999px;
+      background: rgba(255,138,138,.14);
+      color: var(--danger-text);
+      padding: 3px 10px;
+      font: inherit;
+      font-size: 12px;
+      font-weight: 650;
+      cursor: pointer;
+      touch-action: manipulation;
+    }
+    body[data-ui-theme="white-night"] .offline-banner {
+      border-color: rgba(180,35,24,.35);
+      background: rgba(255,246,246,.96);
+      box-shadow: 0 10px 30px rgba(60,20,15,.12);
+    }
+    body[data-ui-theme="white-night"] .offline-banner-retry {
+      border-color: rgba(180,35,24,.45);
+      background: rgba(180,35,24,.08);
+    }
+    .readonly-banner {
+      position: fixed;
+      left: 50%;
+      transform: translateX(-50%);
+      top: calc(var(--effective-safe-area-top) + var(--topbar-row-height) + 8px);
+      z-index: 89;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      max-width: calc(100vw - 32px);
+      padding: 7px 12px;
+      border: 1px solid rgba(94,180,255,.32);
+      border-radius: 999px;
+      background: rgba(18,32,52,.94);
+      color: var(--accent-blue);
+      font-size: 12.5px;
+      box-shadow: 0 10px 30px rgba(0,0,0,.25);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+    }
+    .readonly-banner[hidden] { display: none; }
+    .readonly-banner svg {
+      width: 16px;
+      height: 16px;
+      flex: 0 0 auto;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 1.8;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+    .readonly-banner-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    body.is-readonly .offline-banner { top: calc(var(--effective-safe-area-top) + var(--topbar-row-height) + 46px); }
+    body[data-ui-theme="white-night"] .readonly-banner {
+      border-color: rgba(24,90,188,.35);
+      background: rgba(238,246,255,.96);
+      box-shadow: 0 10px 30px rgba(20,60,120,.12);
+    }
+    body.is-readonly .icon-btn:disabled,
+    body.is-readonly .send-btn:disabled,
+    body.is-readonly .new-thread-btn:disabled,
+    body.is-readonly .keep-awake-btn:disabled,
+    body.is-readonly .thread-action-button:disabled,
+    body.is-readonly .batch-action-btn:disabled,
+    body.is-readonly .environment-action:disabled,
+    body.is-readonly .composer textarea[readonly] { opacity: .55; }
+
+    @supports (content-visibility: auto) {
+      .thread-option, .message, .workspace-row {
+        content-visibility: auto;
+        contain-intrinsic-size: auto 60px;
+      }
+    }
+
+    @media (max-width: 393px) {
+      :root { --topbar-safe-lift: 10px; }
+      .top-actions { max-width: calc(100vw - 132px); gap: 5px; }
+      .thread-name { max-width: 34vw; }
+      .composer-modes {
+        overflow-x: auto;
+        scrollbar-width: none;
+        -ms-overflow-style: none;
+        gap: 5px;
+        padding-right: 6px;
+      }
+      .composer-modes::-webkit-scrollbar { display: none; }
+      .composer-modes .model-badge,
+      .composer-modes .reasoning-badge { min-width: 30px; padding-inline: 7px; font-size: 11px; }
+      .composer-modes .prompt-badge { padding-inline: 8px; font-size: 11px; }
+      .composer { gap: 4px; padding: 8px 6px; border-radius: 26px; }
+      .composer .icon-btn, .composer .send-btn { width: 38px; height: 38px; flex: 0 0 auto; }
+      .composer textarea { min-width: 0; padding-left: 4px; padding-right: 4px; }
+      .composer-shell { padding-left: 10px; padding-right: 10px; }
+    }
   </style>
 </head>
 <body>
@@ -3686,6 +4008,15 @@
     </header>
 
     <div class="notice-pill" id="notice" role="status" aria-live="polite"></div>
+    <div class="offline-banner" id="offline-banner" role="status" aria-live="polite" hidden>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8.5 8.5 4 13l4.5 4.5M15.5 8.5 20 13l-4.5 4.5M9 6.5l6 11"/></svg>
+      <span class="offline-banner-text" id="offline-banner-text" data-i18n="offlineBannerText">无法连接本地 Codex</span>
+      <button class="offline-banner-retry" id="offline-banner-retry" type="button" data-i18n="retry">重试</button>
+    </div>
+    <div class="readonly-banner" id="readonly-banner" role="status" aria-live="polite" hidden>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4.5" y="10.5" width="15" height="10" rx="2"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/><path d="M12 14.8v2"/></svg>
+      <span class="readonly-banner-text" id="readonly-banner-text" data-i18n="readonlyBannerText">只读模式：当前令牌仅可查看，发送、审批与写操作已禁用</span>
+    </div>
     <div class="approval-scrim" id="approval-scrim" aria-hidden="true" hidden></div>
   <div class="message-context-scrim" id="message-context-scrim" aria-hidden="true" hidden></div>
   <div class="message-context-menu" id="message-context-menu" role="menu" hidden></div>
@@ -3898,6 +4229,11 @@
     const threadMenuContent = document.getElementById('thread-menu-content');
     const threadSearch = document.getElementById('thread-search');
     const drawerClose = document.getElementById('drawer-close');
+    const offlineBanner = document.getElementById('offline-banner');
+    const offlineBannerText = document.getElementById('offline-banner-text');
+    const offlineBannerRetry = document.getElementById('offline-banner-retry');
+    const readonlyBanner = document.getElementById('readonly-banner');
+    const readonlyBannerText = document.getElementById('readonly-banner-text');
     const drawerNew = document.getElementById('drawer-new');
     const drawerAccountMenu = document.getElementById('drawer-account-menu');
     const drawerAccountTitle = document.getElementById('drawer-account-title');
@@ -3927,7 +4263,8 @@
     const threadRenameCancel = document.getElementById('thread-rename-cancel');
     const threadRenameSave = document.getElementById('thread-rename-save');
     const queryToken = new URLSearchParams(location.search).get('token') || '';
-    if (queryToken) localStorage.removeItem('codexMini.token');
+    // 持久化令牌：URL 里的 token 随后会被抹掉，刷新/新标签页仍可鉴权
+    if (queryToken) localStorage.setItem('codexMini.token', queryToken);
     const token = queryToken || localStorage.getItem('codexMini.token') || '';
     function detectBasePath(pathname) {
       if (pathname === '/chatgpt-win' || pathname.startsWith('/chatgpt-win/')) return '/chatgpt-win';
@@ -3951,6 +4288,10 @@
     let activeRouteState = 'connecting';
     let activeRouteHost = '';
     let activeRouteError = '';
+    let threadListBusy = false;
+    let threadListError = '';
+    let threadMenuState = 'empty';
+    let lastThreadMenuTrigger = null;
     const apiUrl = path => `${activeApiBase}${path}`;
     const target = 'codex';
     const CONTEXT_COMPACT_COMMAND = '/压缩';
@@ -4054,6 +4395,7 @@
     let foregroundDotBusy = false;
     let environmentData = null;
     let environmentBusy = false;
+    let screenshotState = { initialized: false, loading: false, objectUrl: '', error: '', degraded: false, width: 0, height: 0, refreshedAt: 0, cache: '' };
     let environmentCompareBranch = '';
     let slashCommandOpen = false;
     let slashCommandIndex = 0;
@@ -4102,6 +4444,8 @@
         searchTasks: '搜索任务', showAssistant: '显示小助手', mobileSync: '手机同步到当前 Codex 对话', pendingImages: '待发送图片', queued: '待发送', modelAndReasoning: '模型与推理等级', askChatGpt: '问问 ChatGPT Win',
         language: '语言', languageDetail: '在中文和 English 之间切换此手机控制页', languageChanged: '已切换为中文', languageValue: '中文', theme: '背景主题', themeDetail: '为手机控制页选择黑色夜空或白夜背景', blackSky: '黑色夜空', whiteNight: '白夜', selectTask: '选择任务', newTaskLabel: '新任务', loadingHistory: '正在加载这个 ChatGPT 任务的本机聊天记录…', noHistory: '这个任务暂时没有可加载的聊天记录。'
         , notifyComplete: '回复完成通知', notifyCompleteDetail: 'Codex 回复完毕时弹出浏览器通知', speakReply: '朗读这条回复', exportThread: '导出对话', promptLibrary: '提示词库', promptLibraryEmpty: '暂无提示词，先保存一条吧', promptTitlePlaceholder: '提示词标题（可选）', promptTextPlaceholder: '提示词内容，点选后填入输入框', promptSave: '保存', promptDelete: '删除', promptFilled: '提示词已填入输入框', promptCreated: '已保存提示词', promptDeleted: '已删除提示词', selectTasks: '选择'
+        , retry: '重试', reconnecting: '正在重连…', offlineBannerText: '无法连接本地 Codex', threadLoadFail: '读取任务列表失败', loadingTasks: '正在读取任务…'
+        , readonlyBannerText: '只读模式：当前令牌仅可查看，发送、审批与写操作已禁用'
       },
       en: {
         languageToggleLabel: '中文', languageSwitchTitle: 'Switch to Chinese', compact: 'Compact', archive: 'Archive', rename: 'Rename', compactContext: 'Compact context', cancel: 'Cancel', save: 'Save',
@@ -4109,6 +4453,8 @@
         searchTasks: 'Search tasks', showAssistant: 'Show assistant', mobileSync: 'Mobile sync for the current Codex conversation', pendingImages: 'Images to send', queued: 'Queued', modelAndReasoning: 'Model and reasoning level', askChatGpt: 'Ask ChatGPT Win',
         language: 'Language', languageDetail: 'Switch this mobile control page between English and Chinese', languageChanged: 'Switched to English', languageValue: 'English', theme: 'Background theme', themeDetail: 'Choose a black-sky or white-night background for this mobile control page', blackSky: 'Black sky', whiteNight: 'White night', selectTask: 'Select task', newTaskLabel: 'New task', loadingHistory: 'Loading the local chat history for this ChatGPT task…', noHistory: 'There is no chat history available for this task yet.'
         , notifyComplete: 'Completion notification', notifyCompleteDetail: 'Show a browser notification when Codex finishes replying', speakReply: 'Read this reply aloud', exportThread: 'Export chat', promptLibrary: 'Prompts', promptLibraryEmpty: 'No prompts yet. Save one below.', promptTitlePlaceholder: 'Prompt title (optional)', promptTextPlaceholder: 'Prompt text — tap to fill the input box', promptSave: 'Save', promptDelete: 'Delete', promptFilled: 'Prompt filled into the input box', promptCreated: 'Prompt saved', promptDeleted: 'Prompt deleted', selectTasks: 'Select'
+        , retry: 'Retry', reconnecting: 'Reconnecting…', offlineBannerText: "Can't reach local Codex", threadLoadFail: 'Failed to load tasks', loadingTasks: 'Loading tasks…'
+        , readonlyBannerText: 'Read-only mode: this token can only view — sending, approvals and writes are disabled'
       }
     };
     let uiLanguage = localStorage.getItem(UI_LANGUAGE_STORAGE_KEY) === 'en' ? 'en' : 'zh';
@@ -4388,7 +4734,7 @@
 
     function openTaskListFromSettings() {
       openWorkspace('chat', { keepDrawer: true });
-      threadMenu.classList.add('is-open');
+      openThreadMenu();
     }
 
     function applyUiLanguage() {
@@ -4409,6 +4755,7 @@
       if (languageToggleLabel) languageToggleLabel.textContent = t('languageToggleLabel');
       updateThreadTitle();
       if (promptLibraryPanel && !promptLibraryPanel.hidden) loadPromptLibrary();
+      updateOfflineBanner();
     }
 
     function toggleUiLanguage() {
@@ -4433,6 +4780,7 @@
     const MODEL_MENU_OPTIONS = [];
     let modelMenuOptions = [...MODEL_MENU_OPTIONS];
     let localOnlyMode = true;
+    let accessScope = 'read-write';
     let apiConfigRefreshBusy = false;
     let lastApiConfigRefreshAt = 0;
     const API_CONFIG_REFRESH_MIN_MS = 15000;
@@ -4972,6 +5320,10 @@
     }
     async function submitApprovalDecision(decision) {
       const approval = currentPendingApproval();
+      if (isReadOnlyMode()) {
+        setNotice('只读模式无法审批操作', 'error');
+        return;
+      }
       if (!approval || approvalDecisionBusy || !approvalAllows(approval, decision)) return;
       approvalDecisionBusy = true;
       renderApprovalSheet();
@@ -5299,12 +5651,14 @@
     function updateRouteBadge() {
       const text = routeTextForKind(activeApiKind);
       const stateClass = activeRouteState === 'online' ? 'is-local' : activeRouteState === 'offline' ? 'is-offline' : 'is-connecting';
+      const readOnlyClass = isReadOnlyMode() ? ' is-readonly' : '';
       const stateText = routeStateText();
       const detailText = routeDetailText();
-      routeBadge.className = `route-badge ${stateClass}${routeBadgeCompact ? ' is-compact' : ''}`;
+      routeBadge.className = `route-badge ${stateClass}${readOnlyClass}${routeBadgeCompact ? ' is-compact' : ''}`;
       routeIcon.innerHTML = routeIconMarkup(activeApiKind);
       routeText.textContent = text;
-      routeBadge.title = `${stateText} · 当前控制：${text} · ${detailText}；点击切换显示模式`;
+      const scopeText = isReadOnlyMode() ? ' · 只读' : '';
+      routeBadge.title = `${stateText}${scopeText} · 当前控制：${text} · ${detailText}；点击切换显示模式`;
       routeBadge.setAttribute('aria-label', routeBadge.title);
       if (drawerConnection) {
         drawerConnection.className = `drawer-footer ${stateClass}`;
@@ -5324,8 +5678,47 @@
         activeControlMode = options.controlMode === 'app-server' ? 'app-server' : options.controlMode === 'cdp' ? 'cdp' : 'gui';
       }
       updateRouteBadge();
+      updateOfflineBanner();
+    }
+    function updateOfflineBanner() {
+      if (!offlineBanner || !offlineBannerText || !offlineBannerRetry) return;
+      if (activeRouteState === 'online') {
+        offlineBanner.hidden = true;
+        return;
+      }
+      offlineBanner.hidden = false;
+      offlineBannerText.textContent = activeRouteState === 'connecting' ? t('reconnecting') : t('offlineBannerText');
+      offlineBannerRetry.hidden = activeRouteState !== 'offline';
+    }
+    function isReadOnlyMode() {
+      return accessScope === 'read-only';
+    }
+    function updateReadOnlyUi() {
+      const readOnly = isReadOnlyMode();
+      document.body.classList.toggle('is-readonly', readOnly);
+      const controls = [
+        sendButton, stopButton, attachButton, voiceInputButton, newThreadButton, keepAwakeButton,
+        approvalDecline, approvalOnce, threadActionArchive, threadActionRename, threadActionPinToggle,
+        threadActionCompact, threadActionSelect, threadActionReview, batchArchiveBtn, batchDeleteBtn,
+        cdpLaunchButton, contextQuickCard,
+      ];
+      for (const control of controls) {
+        if (control) control.disabled = readOnly || control.disabled;
+      }
+      if (textarea) {
+        textarea.readOnly = readOnly;
+        textarea.setAttribute('aria-readonly', readOnly ? 'true' : 'false');
+        textarea.setAttribute('placeholder', readOnly ? '只读模式，无法发送' : t('askChatGpt'));
+      }
+      if (readonlyBanner) readonlyBanner.hidden = !readOnly;
+      if (readonlyBannerText) readonlyBannerText.textContent = t('readonlyBannerText');
+      if (readOnly && batchMode) exitBatchMode();
+      renderKeepAwakeButton();
+      updateRouteBadge();
+      updateOfflineBanner();
     }
     function renderPetBuddy() {
+
       if (!petBuddy) return;
       petBuddy.hidden = !petVisible;
       if (drawerPetState) drawerPetState.textContent = petVisible ? '开启' : '关闭';
@@ -5473,6 +5866,8 @@
         const data = await response.json();
         if (!response.ok || !data.ok) throw new Error(data.message || '读取线路配置失败');
         localOnlyMode = true;
+        accessScope = data.scope === 'read-only' ? 'read-only' : 'read-write';
+        updateReadOnlyUi();
         if (Array.isArray(data.modelOptions) && data.modelOptions.length) {
           modelMenuOptions = data.modelOptions
             .filter(item => item && item.id)
@@ -5559,6 +5954,7 @@
         commit: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M3.5 12h5.5M15 12h5.5"></path></svg>',
         process: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="14" rx="2"></rect><path d="m8 10 2 2-2 2M12.5 14H16"></path></svg>',
         browser: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"></circle><path d="M3.7 9h16.6M9 3.9c2.2 2.5 3.2 5.2 3 8.1-.2 3-1.2 5.6-3 8.1M15 3.9c-1.4 1.8-2.3 3.9-2.8 6.1"></path></svg>',
+        download: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v10M7.5 9.5 12 14l4.5-4.5"></path><path d="M5 15v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3"></path></svg>',
         source: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5h6l2 2h8v9H4z"></path><path d="M4 6.5V5h6l2 2"></path></svg>',
       };
       return icons[kind] || icons.source;
@@ -5572,6 +5968,12 @@
     function environmentNumber(value, prefix = '') {
       const number = Number(value) || 0;
       return `${prefix}${number.toLocaleString('zh-CN')}`;
+    }
+
+    function environmentDownloadLimit(data) {
+      const bytes = Number(data?.capabilities?.downloadLimit);
+      if (!Number.isFinite(bytes) || bytes <= 0) return '20MB';
+      return bytes >= 1024 * 1024 ? `${Math.round(bytes / 1024 / 1024)}MB` : `${Math.max(1, Math.round(bytes / 1024))}KB`;
     }
 
     function renderEnvironmentContent(data) {
@@ -5595,6 +5997,19 @@
       const browser = data.browser || {};
       const browserLabel = browser.available ? '桌面浏览器已连接' : '未连接桌面浏览器';
       const browserDetail = browser.available ? `CDP :${Number(browser.port) || 9222}` : (browser.message || '手机端仅能读取本地服务状态');
+      const screenshotAvailable = Boolean(browser.screenshot?.available);
+      let screenshotBodyHtml;
+      if (screenshotState.loading) {
+        screenshotBodyHtml = '<div class="environment-screenshot-state is-loading" role="status">正在获取桌面浏览器截图…</div>';
+      } else if (screenshotState.objectUrl) {
+        const dimensions = screenshotState.width && screenshotState.height ? `${screenshotState.width}×${screenshotState.height}` : 'PNG';
+        const meta = screenshotState.refreshedAt ? `<div class="environment-screenshot-meta"><span>${dimensions}${screenshotState.cache === 'hit' ? ' · 缓存' : ''}</span><span>${new Date(screenshotState.refreshedAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}</span></div>` : '';
+        screenshotBodyHtml = `<img class="environment-screenshot-image" src="${screenshotState.objectUrl}" alt="桌面浏览器屏幕截图" loading="lazy">${meta}`;
+      } else if (screenshotState.error) {
+        screenshotBodyHtml = `<div class="environment-screenshot-state ${screenshotState.degraded ? 'is-degraded' : 'is-error'}" role="alert">${escapeHtml(screenshotState.error)}</div>`;
+      } else {
+        screenshotBodyHtml = `<div class="environment-screenshot-state">${screenshotAvailable ? '点击“刷新截图”获取桌面浏览器画面。' : 'CDP 不可用，无法预览截图。请在电脑端为 Codex 开启 CDP 后重试。'}</div>`;
+      }
       const compareSummary = compare ? `对比 ${compare.branch}：+${environmentNumber(compare.changes?.additions)} -${environmentNumber(compare.changes?.deletions)} · ${environmentNumber(compare.changes?.files)} 个文件` : '';
       environmentContent.innerHTML = `
         <section class="environment-section">
@@ -5619,12 +6034,17 @@
         </section>
         <section class="environment-section">
           <h3 class="environment-section-title">后台进程</h3>
+        ${capabilities.canDownload ? `<div class="environment-section"><h3 class="environment-section-title">下载文件</h3><div class="environment-row"><span class="environment-icon">${environmentIcon('download')}</span><div class="environment-main"><span class="environment-label">从工作区下载</span><span class="environment-detail">输入相对路径（例如 src/app.js），单个文件不超过 ${environmentDownloadLimit(data)}。</span></div></div><div class="environment-download-row"><input class="environment-download-input" id="environment-download-path" type="text" inputmode="text" autocomplete="off" spellcheck="false" aria-label="工作区内文件相对路径" placeholder="例如 src/app.js"><button class="environment-action is-primary" data-env-action="download" type="button">下载</button></div></div>` : ''}
           <div class="environment-list">${processRows || '<div class="environment-list-item is-disabled">暂无后台进程</div>'}</div>
         </section>
         <section class="environment-section">
           <h3 class="environment-section-title">浏览器</h3>
           <div class="environment-row"><span class="environment-icon">${environmentIcon('browser')}</span><div class="environment-main"><span class="environment-label">${escapeHtml(browserLabel)}</span><span class="environment-detail">${escapeHtml(browserDetail)}</span></div><span class="environment-value ${browser.available ? '' : 'is-neutral'}">${browser.available ? '已连接' : '离线'}</span></div>
           <div class="environment-note">手机端不会接管电脑浏览器标签页；开启 CDP 后可在电脑端继续使用。</div>
+          <div class="environment-screenshot" aria-label="屏幕截图预览">
+            <div class="environment-screenshot-head"><span class="environment-label">屏幕截图预览</span><button class="environment-action" id="environment-screenshot-refresh" type="button"${browser.available && !screenshotState.loading ? '' : ' disabled'} title="${screenshotState.loading ? '正在获取截图' : '重新获取桌面浏览器截图'}" aria-label="刷新桌面浏览器截图">${screenshotState.loading ? '截图中…' : '刷新截图'}</button></div>
+            <div class="environment-screenshot-body" id="environment-screenshot-body">${screenshotBodyHtml}</div>
+          </div>
         </section>
         <section class="environment-section">
           <h3 class="environment-section-title">来源</h3>
@@ -5636,7 +6056,12 @@
       environmentContent.querySelector('[data-env-action="compare"]')?.addEventListener('click', () => loadEnvironment({ force: true, compare: environmentCompareBranch }));
       environmentContent.querySelector('[data-env-action="commit"]')?.addEventListener('click', () => commitEnvironmentChanges());
       environmentContent.querySelector('[data-env-action="push"]')?.addEventListener('click', () => pushEnvironmentChanges());
+      environmentContent.querySelector('[data-env-action="download"]')?.addEventListener('click', () => downloadWorkspaceFile());
+      environmentContent.querySelector('#environment-screenshot-refresh')?.addEventListener('click', () => refreshScreenshotPreview());
       environmentContent.querySelector('#environment-branch')?.addEventListener('change', event => switchEnvironmentBranch(event.target.value));
+      if (screenshotAvailable && !screenshotState.initialized && !screenshotState.loading) {
+        refreshScreenshotPreview();
+      }
     }
 
     async function postEnvironmentAction(body) {
@@ -5693,6 +6118,87 @@
       }
     }
 
+    async function downloadWorkspaceFile() {
+      const input = environmentContent?.querySelector('#environment-download-path');
+      const relativePath = String(input?.value || '').trim();
+      const cwd = environmentData?.cwd || environmentCurrentCwd();
+      if (!cwd) { setNotice('当前没有可用工作区', 'error'); return; }
+      if (!relativePath) { setNotice('请输入工作区内的相对路径', 'error'); input?.focus(); return; }
+      const params = new URLSearchParams({ cwd, file: relativePath, token });
+      setWorkingDot(true);
+      try {
+        const response = await fetchApi(`/codex/download?${params}`, { apiTimeoutMs: 60000, routeSwitchQuiet: true });
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}));
+          throw new Error(data.message || '下载失败');
+        }
+        const disposition = response.headers.get('content-disposition') || '';
+        const match = disposition.match(/filename=\"?([^";]+)\"?/i);
+        const fileName = match ? match[1] : String(relativePath.split(/[\\/]+/).pop() || 'download');
+        const blob = await response.blob();
+        const objectUrl = URL.createObjectURL(blob);
+        const anchor = document.createElement('a');
+        anchor.href = objectUrl;
+        anchor.download = fileName;
+        anchor.rel = 'noopener';
+        anchor.style.display = 'none';
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        setTimeout(() => URL.revokeObjectURL(objectUrl), 30000);
+        setNotice(`已开始下载 ${fileName}`, 'ok');
+      } catch (error) {
+        setNotice(error.message || '下载失败', 'error');
+      } finally {
+        if (!activeAssistant && !pollTimer) setWorkingDot(false);
+      }
+    }
+
+
+    async function refreshScreenshotPreview() {
+      if (screenshotState.loading) return;
+      screenshotState.loading = true;
+      screenshotState.error = '';
+      screenshotState.degraded = false;
+      renderEnvironmentContent(environmentData);
+      setWorkingDot(true);
+      try {
+        const response = await fetchApi('/codex/screenshot', { apiTimeoutMs: 30000, routeSwitchQuiet: true, headers: { 'x-mobile-typer-token': token } });
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}));
+          const code = String(data.code || '');
+          screenshotState.degraded = response.status === 503 || code === 'CDP_UNAVAILABLE' || code === 'CDP_SCREENSHOT_UNSUPPORTED';
+          screenshotState.error = data.message || '截图失败';
+          throw new Error(screenshotState.error);
+        }
+        const blob = await response.blob();
+        if (!blob || !blob.type.startsWith('image/')) throw new Error('截图返回格式异常，请重试');
+        if (screenshotState.objectUrl) URL.revokeObjectURL(screenshotState.objectUrl);
+        screenshotState.objectUrl = URL.createObjectURL(blob);
+        screenshotState.initialized = true;
+        screenshotState.refreshedAt = Date.now();
+        screenshotState.cache = response.headers.get('x-screenshot-cache') || '';
+        screenshotState.width = 0;
+        screenshotState.height = 0;
+        const image = new Image();
+        image.onload = () => {
+          screenshotState.width = image.naturalWidth;
+          screenshotState.height = image.naturalHeight;
+          renderEnvironmentContent(environmentData);
+        };
+        image.onerror = () => {
+          screenshotState.error = '截图加载失败，请重试';
+          renderEnvironmentContent(environmentData);
+        };
+        image.src = screenshotState.objectUrl;
+      } catch (error) {
+        screenshotState.initialized = true;
+        screenshotState.error = error.message || '截图失败';
+      } finally {
+        screenshotState.loading = false;
+        renderEnvironmentContent(environmentData);
+      }
+    }
     async function loadEnvironment(options = {}) {
       if (!environmentContent || environmentBusy) return;
       environmentBusy = true;
@@ -5720,7 +6226,7 @@
       closeModelMenu();
       closeContextQuickCard();
       closeThreadActionCard();
-      threadMenu.classList.remove('is-open');
+      closeThreadMenu({ restoreFocus: false });
       selectSettingsCategory('environment');
       openWorkspace('settings');
     }
@@ -5729,11 +6235,11 @@
     function renderKeepAwakeButton() {
       if (!keepAwakeButton) return;
       keepAwakeButton.hidden = false;
-      keepAwakeButton.disabled = keepAwakeBusy;
+      keepAwakeButton.disabled = keepAwakeBusy || isReadOnlyMode();
       keepAwakeButton.classList.toggle('is-on', Boolean(keepAwakeEnabled));
       keepAwakeButton.classList.toggle('is-busy', Boolean(keepAwakeBusy));
       const label = keepAwakeEnabled ? '保持亮屏已开启' : '保持亮屏';
-      keepAwakeButton.title = keepAwakeEnabled ? '已阻止这台电脑自动休眠，点击关闭' : '阻止这台电脑自动休眠和熄屏';
+      keepAwakeButton.title = isReadOnlyMode() ? '只读模式：保持亮屏不可操作' : (keepAwakeEnabled ? '已阻止这台电脑自动休眠，点击关闭' : '阻止这台电脑自动休眠和熄屏');
       keepAwakeButton.setAttribute('aria-label', label);
     }
 
@@ -5856,7 +6362,7 @@
         } finally {
           routeMonitorBusy = false;
         }
-      }, isCurrentlyOffline ? 2500 : 5000);
+      }, (activeRouteState === 'offline' || activeRouteState === 'connecting') ? 2500 : 5000);
     }
     function scrollBottom(options = {}) {
       const apply = () => {
@@ -7531,8 +8037,11 @@ function addDetails(message, steps = [], liveUpdate = false) {
             setNotice(error.message || '删除计划失败', 'error');
           }
         });
-        actions.append(run, remove);
+        run.setAttribute('data-schedule-action', 'run');
+        remove.setAttribute('data-schedule-action', 'delete');
+        if (task.lastStatus === 'running' || task.lastStatus === 'started') run.disabled = true;
         const toggle = workspaceElement('label', 'workspace-toggle');
+        toggle.setAttribute('data-schedule-action', 'toggle');
         const toggleInput = document.createElement('input');
         toggleInput.type = 'checkbox';
         toggleInput.checked = task.enabled !== false;
@@ -7548,14 +8057,30 @@ function addDetails(message, steps = [], liveUpdate = false) {
             await loadWorkspaceData('scheduled', { force: true });
           }
         });
-        const meta = [scheduledStatusLabel(task.lastStatus), task.nextRunAt ? `下次 ${formatRelativeTime(task.nextRunAt) || task.nextRunAt}` : ''].filter(Boolean).join(' · ');
+        const scheduleStatusKey = task.enabled === false ? 'paused' : ({ running: 'running', started: 'started', error: 'error', skipped: 'skipped' }[task.lastStatus] || 'idle');
+        const metaNode = workspaceElement('div', 'workspace-row-meta workspace-schedule-meta');
+        const statusChip = workspaceElement('span', `workspace-schedule-status is-${scheduleStatusKey}`);
+        statusChip.setAttribute('data-schedule-status', scheduleStatusKey);
+        statusChip.textContent = task.enabled === false ? '已暂停' : scheduledStatusLabel(task.lastStatus);
+        metaNode.appendChild(statusChip);
+        if (task.nextRunAt) {
+          metaNode.appendChild(workspaceElement('span', 'workspace-schedule-next', `下次 ${formatRelativeTime(task.nextRunAt) || task.nextRunAt}`));
+        }
+        const side = workspaceElement('div', 'workspace-schedule-side');
+        side.append(metaNode, actions);
+        actions.append(toggle, run, remove);
         const row = workspaceListRow({
           title: schedulePromptTitle(task),
           detail: [task.runMode === 'thread' ? '延续当前任务' : '独立任务', formatScheduleInterval(task.intervalMinutes)].join(' · '),
-          meta,
           className: 'workspace-schedule-row',
         });
-        row.append(toggle, actions);
+        row.append(side);
+        if (task.lastStatus === 'error' && task.lastMessage) {
+          const errorLine = workspaceElement('div', 'workspace-row-error');
+          errorLine.setAttribute('role', 'alert');
+          errorLine.textContent = String(task.lastMessage);
+          row.appendChild(errorLine);
+        }
         list.appendChild(row);
       }
       workspaceContent.appendChild(list);
@@ -7836,7 +8361,7 @@ function addDetails(message, steps = [], liveUpdate = false) {
           await toggleKeepAwake();
           workspaceData.settings = { ...(workspaceData.settings || {}), keepAwake: { enabled: keepAwakeEnabled } };
           renderWorkspace();
-        }, { disabled: keepAwakeBusy }),
+        }, { disabled: keepAwakeBusy || isReadOnlyMode() }),
       };
       const renderedCategory = {
         general: () => {
@@ -8037,12 +8562,12 @@ function addDetails(message, steps = [], liveUpdate = false) {
       updateThreadTitle();
       if (next === 'chat') {
         workspaceErrors[activeWorkspace] = '';
-        if (!options.keepDrawer) threadMenu.classList.remove('is-open');
+        if (!options.keepDrawer) closeThreadMenu({ restoreFocus: false });
         positionComposerSignature();
         return;
       }
       if (changed) scheduleFormOpen = false;
-      if (!options.keepDrawer) threadMenu.classList.remove('is-open');
+      if (!options.keepDrawer) closeThreadMenu({ restoreFocus: false });
       renderWorkspace();
       loadWorkspaceData(next, { force: changed }).catch(() => {});
     }
@@ -8356,10 +8881,58 @@ function addDetails(message, steps = [], liveUpdate = false) {
         : knownThreads;
       const hasContentHits = Boolean(query && threadSearchResults.length);
       if (!visibleThreads.length && !hasContentHits) {
+      if (!visibleThreads.length && !hasContentHits && !query) {
+        if (threadListBusy) {
+          const list = document.createElement('div');
+          list.className = 'thread-list';
+          list.setAttribute('role', 'status');
+          list.setAttribute('aria-label', t('loadingTasks'));
+          for (let i = 0; i < 4; i += 1) {
+            const row = document.createElement('div');
+            row.className = `thread-skeleton-row${i % 2 ? ' is-conversation' : ''}`;
+            const block = document.createElement('div');
+            block.className = 'skeleton-block';
+            const condensed = document.createElement('div');
+            condensed.className = 'skeleton-block is-condensed';
+            row.append(block, condensed);
+            list.appendChild(row);
+          }
+          menuRoot.appendChild(list);
+          threadMenuState = 'skeleton';
+          lastThreadMenuSignature = threadMenuVisualSignature();
+          positionThreadMenuCard();
+          return;
+        }
+        if (threadListError) {
+          const errorBox = document.createElement('div');
+          errorBox.className = 'thread-menu-error';
+          const title = document.createElement('div');
+          title.className = 'thread-menu-error-title';
+          title.textContent = t('threadLoadFail');
+          const detail = document.createElement('div');
+          detail.className = 'thread-menu-error-detail';
+          detail.textContent = threadListError;
+          const retry = document.createElement('button');
+          retry.type = 'button';
+          retry.className = 'thread-menu-error-retry';
+          retry.textContent = t('retry');
+          retry.setAttribute('aria-label', t('retry'));
+          retry.addEventListener('click', () => {
+            loadThreads({ renderMenu: 'always' }).catch(error => setNotice(error.message || t('threadLoadFail'), 'error'));
+          });
+          errorBox.append(title, detail, retry);
+          menuRoot.appendChild(errorBox);
+          threadMenuState = 'error';
+          lastThreadMenuSignature = threadMenuVisualSignature();
+          positionThreadMenuCard();
+          return;
+        }
+      }
         const empty = document.createElement('div');
         empty.className = 'empty-thread-menu';
         empty.textContent = query ? '没有找到相关任务。' : '还没有读取到任务。';
         menuRoot.appendChild(empty);
+        threadMenuState = 'empty';
         lastThreadMenuSignature = threadMenuVisualSignature();
         positionThreadMenuCard();
         return;
@@ -8489,6 +9062,10 @@ function addDetails(message, steps = [], liveUpdate = false) {
       }
       const detectTransitions = Boolean(options.detectTransitions);
       const renderMode = options.renderMenu || 'always';
+      threadListBusy = true;
+      threadListError = '';
+      if (threadMenuState !== 'skeleton' && !knownThreads.length && threadMenuOpen()) renderThreadMenu();
+      try {
       const response = await fetchApi(`/codex/threads?limit=120&token=${encodeURIComponent(token)}`, { cache: 'no-store' });
       const data = await response.json();
       if (!data.ok) throw new Error(data.message || '读取任务失败');
@@ -8516,6 +9093,13 @@ function addDetails(message, steps = [], liveUpdate = false) {
       updateThreadTitle();
       if (renderMode === 'ifChanged') renderThreadMenuIfVisualChanged();
       else renderThreadMenu();
+      } catch (error) {
+        threadListError = error.message || '读取任务失败';
+        if (threadMenuState !== 'error') renderThreadMenu();
+        throw error;
+      } finally {
+        threadListBusy = false;
+      }
     }
 
     async function openCodexThread(threadId, apiOptions = {}) {
@@ -8609,7 +9193,7 @@ function addDetails(message, steps = [], liveUpdate = false) {
       const current = threadItemById(threadId);
       if (!current || !threadId) return;
       actionThreadId = threadId;
-      if (!options.keepThreadMenu) threadMenu.classList.remove('is-open');
+      if (!options.keepThreadMenu) closeThreadMenu({ restoreFocus: false });
       closeReasoningMenu();
       closeModelMenu();
       threadActionCard.style.left = '';
@@ -8628,7 +9212,7 @@ function addDetails(message, steps = [], liveUpdate = false) {
     function showRenamePanel() {
       const current = actionThreadItem();
       if (!current) return;
-      threadMenu.classList.remove('is-open');
+      closeThreadMenu({ restoreFocus: false });
       threadRenameInput.value = current.name || '';
       threadActionCard.classList.add('is-renaming');
       threadActionCard.style.left = '';
@@ -8648,6 +9232,7 @@ function addDetails(message, steps = [], liveUpdate = false) {
 
     async function postThreadAction(action, payload = {}) {
       const targetThreadId = String(payload.threadId || actionThreadId || selectedThreadId || '');
+      if (isReadOnlyMode()) throw new Error('只读模式无法修改任务');
       if (!targetThreadId) throw new Error('还没有选中任务。');
       const response = await fetchApi('/codex/thread-action', {
         method: 'POST',
@@ -8918,7 +9503,7 @@ function addDetails(message, steps = [], liveUpdate = false) {
       const isProjectScope = Boolean(current?.isProjectThread && (current.projectPath || current.cwd));
       const newThreadScope = isProjectScope ? 'project' : 'conversation';
       newThreadButton.disabled = true;
-      threadMenu.classList.remove('is-open');
+      closeThreadMenu();
       setWorkingDot(true);
       setNotice(isProjectScope ? '正在当前项目新建任务…' : '正在新建任务…', 'ok');
       try {
@@ -9068,17 +9653,47 @@ function addDetails(message, steps = [], liveUpdate = false) {
       return true;
     }
 
+    function appendMessageSkeleton() {
+      const article = document.createElement('article');
+      article.className = 'message assistant is-skeleton';
+      article.setAttribute('aria-label', t('loadingHistory'));
+      article.setAttribute('role', 'status');
+      const wrap = document.createElement('div');
+      wrap.className = 'bubble-wrap';
+      const meta = document.createElement('div');
+      meta.className = 'meta';
+      const metaBlock = document.createElement('div');
+      metaBlock.className = 'skeleton-block';
+      metaBlock.style.width = '96px';
+      metaBlock.style.height = '12px';
+      meta.appendChild(metaBlock);
+      const bubble = document.createElement('div');
+      bubble.className = 'bubble markdown-body';
+      for (const width of ['100%', '82%', '62%']) {
+        const block = document.createElement('div');
+        block.className = 'skeleton-block';
+        block.style.width = width;
+        block.style.height = '14px';
+        bubble.appendChild(block);
+      }
+      wrap.append(meta, bubble);
+      article.appendChild(wrap);
+      thread.appendChild(article);
+      scrollBottom();
+      return article;
+    }
     async function loadThreadHistory(threadId = selectedThreadId) {
+
       if (!threadId) return;
       const requestId = ++historyRequestId;
       clearThreadMessages();
-      const loading = messageEl('assistant', t('loadingHistory'), { label: 'ChatGPT Win' });
+      const loading = appendMessageSkeleton();
       try {
         const params = new URLSearchParams({ token, thread: threadId, limit: '120' });
         const response = await fetchApi(`/codex/history?${params}`, { cache: 'no-store', apiTimeoutMs: 30000 });
         const data = await response.json();
         if (requestId !== historyRequestId || threadId !== selectedThreadId) return;
-        loading.article.remove();
+        loading.remove();
         if (!response.ok || !data.ok) throw new Error(data.message || '读取聊天记录失败');
         if (!data.available || !Array.isArray(data.messages) || !data.messages.length) {
           const resumed = await resumeActiveThreadStatus(threadId, requestId);
@@ -9105,7 +9720,7 @@ function addDetails(message, steps = [], liveUpdate = false) {
         }
       } catch (error) {
         if (requestId !== historyRequestId || threadId !== selectedThreadId) return;
-        loading.article.remove();
+        loading.remove();
         setNotice(error.message || '读取聊天记录失败', 'error');
         restoreMessages();
       }
@@ -9114,7 +9729,7 @@ function addDetails(message, steps = [], liveUpdate = false) {
     async function selectThread(threadId) {
       if (!threadId) return;
       if (activeWorkspace !== 'chat') openWorkspace('chat', { keepDrawer: true });
-      threadMenu.classList.remove('is-open');
+      closeThreadMenu({ restoreFocus: false });
       setThreadCompleteNotice(threadId, false);
       if (threadId === selectedThreadId) {
         if (activeAssistant || pollTimer) {
@@ -9490,7 +10105,7 @@ function stopPolling() {
     }
 
     function openReasoningMenu(options = {}) {
-      threadMenu.classList.remove('is-open');
+      closeThreadMenu({ restoreFocus: false });
       closeThreadActionCard();
       closeContextQuickCard();
       closeModelMenu();
@@ -9559,7 +10174,7 @@ function stopPolling() {
     }
 
     function openModelMenu(options = {}) {
-      threadMenu.classList.remove('is-open');
+      closeThreadMenu({ restoreFocus: false });
       closeThreadActionCard();
       closeContextQuickCard();
       closeReasoningMenu();
@@ -9628,7 +10243,7 @@ function stopPolling() {
     }
 
     function openContextQuickCard(options = {}) {
-      threadMenu.classList.remove('is-open');
+      closeThreadMenu({ restoreFocus: false });
       closeThreadActionCard();
       closeReasoningMenu();
       closeModelMenu();
@@ -9717,6 +10332,10 @@ function stopPolling() {
 
     async function sendText(options = {}) {
       closeSlashCommandMenu();
+      if (isReadOnlyMode()) {
+        setNotice('只读模式无法发送消息', 'error');
+        return;
+      }
       const hasTextOverride = typeof options.text === 'string';
       const isPendingNewThreadFirstSend = Boolean(pendingNewThread && !selectedThreadId);
       const queueBehindActiveRun = Boolean((activeAssistant || pollTimer) && !isPendingNewThreadFirstSend);
@@ -9958,11 +10577,14 @@ function stopPolling() {
         openWorkspace(button.dataset.workspace || 'chat');
       });
     }
-    drawerClose?.addEventListener('click', () => threadMenu.classList.remove('is-open'));
-    threadMenuScrim?.addEventListener('click', () => threadMenu.classList.remove('is-open'));
+    drawerClose?.addEventListener('click', () => closeThreadMenu());
+    threadMenuScrim?.addEventListener('click', () => closeThreadMenu());
     drawerNew?.addEventListener('click', () => {
-      threadMenu.classList.remove('is-open');
+      closeThreadMenu();
       createNewThreadInCurrentProject();
+    });
+    offlineBannerRetry?.addEventListener('click', () => {
+      chooseApiCandidate({ preferLocal: true, quiet: false }).catch(() => {});
     });
     threadSearch?.addEventListener('input', () => {
       threadSearchTerm = threadSearch.value || '';
@@ -9992,7 +10614,7 @@ function stopPolling() {
       event.preventDefault();
       event.stopPropagation();
       closeDrawerAccountMenu();
-      threadMenu.classList.remove('is-open');
+      closeThreadMenu({ restoreFocus: false });
       openWorkspace('settings');
     });
 
@@ -10233,13 +10855,41 @@ function stopPolling() {
       }
     }
 
+    function isThreadMenuRail() {
+      return window.matchMedia('(min-width: 900px) and (min-height: 650px)').matches;
+    }
+    function threadMenuOpen() {
+      return Boolean(threadMenu?.classList.contains('is-open')) || isThreadMenuRail();
+    }
+    function openThreadMenu(options = {}) {
+      if (threadMenu.classList.contains('is-open')) return;
+      if (!isThreadMenuRail()) lastThreadMenuTrigger = document.activeElement;
+      threadMenu.classList.add('is-open');
+      positionThreadMenuCard();
+      if (options.focus !== false && !isThreadMenuRail()) {
+        const target = threadSearch || threadMenu.querySelector('button');
+        window.setTimeout(() => target?.focus({ preventScroll: true }), 0);
+      }
+    }
+    function closeThreadMenu(options = {}) {
+      if (!threadMenu.classList.contains('is-open')) return;
+      threadMenu.classList.remove('is-open');
+      if (options.restoreFocus !== false && lastThreadMenuTrigger && !isThreadMenuRail()) {
+        const trigger = lastThreadMenuTrigger;
+        lastThreadMenuTrigger = null;
+        window.setTimeout(() => { if (typeof trigger?.focus === 'function') trigger.focus({ preventScroll: true }); }, 0);
+      } else {
+        lastThreadMenuTrigger = null;
+      }
+    }
+
+
     function toggleThreadMenuFromTitle() {
       closeReasoningMenu();
       closeModelMenu();
       closeThreadActionCard();
-      const willOpen = !threadMenu.classList.contains('is-open');
-      threadMenu.classList.toggle('is-open');
-      if (willOpen) positionThreadMenuCard();
+      if (threadMenu.classList.contains('is-open')) closeThreadMenu();
+      else openThreadMenu();
       loadThreads({ detectTransitions: true, renderMenu: 'ifChanged' }).catch(error => setNotice(error.message || '读取任务失败', 'error'));
     }
 
@@ -10298,9 +10948,36 @@ function stopPolling() {
     modelMenuCard.addEventListener('pointerdown', event => event.stopPropagation());
     modelMenuCard.addEventListener('touchstart', event => event.stopPropagation(), { passive: true });
     modelMenuCard.addEventListener('click', event => event.stopPropagation());
+    const READONLY_WRITE_SELECTOR = [
+      '#send', '#stop', '#attach', '#voice-input', '#file-input', '#new-thread', '#keep-awake',
+      '#approval-decline', '#approval-once', '#thread-action-archive', '#thread-action-rename',
+      '#thread-action-pin-toggle', '#thread-action-compact', '#thread-action-select',
+      '#thread-action-review', '#batch-archive-btn', '#batch-delete-btn', '#cdp-launch',
+      '#context-quick-card', '#prompt-library-save', '#thread-rename-save',
+      '.model-menu-item', '.reasoning-menu-item', '.workspace-command-button[type="submit"]',
+      '.workspace-mcp-add', '.workspace-row-action', '[data-schedule-action]',
+      '[data-env-action="commit"]', '[data-env-action="push"]',
+    ].join(',');
+    document.addEventListener('click', event => {
+      if (!isReadOnlyMode()) return;
+      const target = event.target instanceof Element ? event.target.closest('button, a, [role="button"], input, select, textarea') : null;
+      if (!target || !target.closest(READONLY_WRITE_SELECTOR)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      setNotice('只读模式：该操作需要读写令牌', 'error');
+    }, true);
+    document.addEventListener('submit', event => {
+      if (!isReadOnlyMode()) return;
+      const form = event.target;
+      if (form && form.matches && form.matches('#composer, #prompt-library-form, .workspace-command-form')) {
+        event.preventDefault();
+        event.stopPropagation();
+        setNotice('只读模式：该操作需要读写令牌', 'error');
+      }
+    }, true);
     document.addEventListener('click', event => {
       if (!slashCommandMenu?.contains(event.target) && event.target !== textarea) closeSlashCommandMenu();
-      if (!threadMenu.contains(event.target) && !threadButton.contains(event.target) && !newThreadButton.contains(event.target) && !reasoningBadge.contains(event.target) && !modelBadge.contains(event.target)) threadMenu.classList.remove('is-open');
+      if (!threadMenu.contains(event.target) && !threadButton.contains(event.target) && !newThreadButton.contains(event.target) && !reasoningBadge.contains(event.target) && !modelBadge.contains(event.target)) closeThreadMenu({ restoreFocus: false });
       if (!drawerAccountMenu?.contains(event.target) && !drawerConnection?.contains(event.target)) closeDrawerAccountMenu();
       if (!threadActionCard.contains(event.target) && !threadButton.contains(event.target) && !reasoningBadge.contains(event.target) && !modelBadge.contains(event.target)) closeThreadActionCard();
       if (!contextQuickCard.contains(event.target) && !topStatus.contains(event.target)) closeContextQuickCard();
@@ -10354,10 +11031,15 @@ function stopPolling() {
       }
     });
     document.addEventListener('keydown', event => {
+      if (event.key === 'Escape' && threadMenu?.classList.contains('is-open') && !isThreadMenuRail()) {
+        event.preventDefault();
+        closeThreadMenu();
+        return;
+      }
       if ((event.ctrlKey || event.metaKey) && event.key === ',') {
         event.preventDefault();
         closeDrawerAccountMenu();
-        threadMenu.classList.remove('is-open');
+        closeThreadMenu({ restoreFocus: false });
         openWorkspace('settings');
       }
     });

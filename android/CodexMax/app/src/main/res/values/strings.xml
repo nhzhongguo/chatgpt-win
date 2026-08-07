@@ -36,6 +36,9 @@
     <string name="token_invalid">token 无效，请重新扫描电脑端二维码</string>
     <string name="http_error">电脑端返回 HTTP %1$d</string>
     <string name="webview_process_failed">页面渲染已中断，请重新连接</string>
+    <string name="browser_error_title">无法连接电脑端</string>
+    <string name="retry">重试</string>
+    <string name="back_to_connection">回到连接页</string>
     <string name="external_link_failed">无法打开外部链接</string>
     <string name="file_picker_failed">无法打开附件选择器</string>
     <string name="screen_fit_title">屏幕与状态栏</string>

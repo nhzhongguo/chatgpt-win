@@ -143,6 +143,13 @@ test('Router: 分发异常被捕获并返回 500 JSON', async () => {
   assert.equal(body.ok, false);
 });
 
+test('Router: 畸形 Host 返回 400 而不是抛异常', async () => {
+  const router = makeTestRouter(null);
+  const { status, body } = await dispatchJson(router, mockReq({ url: '/', headers: { host: '[' } }));
+  assert.equal(status, 400);
+  assert.equal(body.code, 'BAD_URL');
+});
+
 // ---- Security 行为 ----
 
 test('Security: token 可从 header/query/cookie 三种渠道校验', () => {

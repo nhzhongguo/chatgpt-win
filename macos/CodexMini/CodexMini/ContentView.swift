@@ -1,5 +1,24 @@
 import SwiftUI
 
+// MARK: - 语义色板（与 Web/Android 一致：青绿主色、蓝辅色、琥珀、危险红、成功绿）
+// 颜色值与 android/.../ui/theme/Color.kt 对齐，避免跨端语义漂移。
+extension Color {
+    static let appBackground = Color(red: 16 / 255, green: 20 / 255, blue: 25 / 255) // #101419
+    static let appSurface = Color(red: 25 / 255, green: 31 / 255, blue: 38 / 255) // #191F26
+    static let appSurfaceAlt = Color(red: 33 / 255, green: 41 / 255, blue: 50 / 255) // #212932
+    static let appSurfaceDeep = Color(red: 21 / 255, green: 26 / 255, blue: 34 / 255) // #151A22
+    static let appDivider = Color(red: 48 / 255, green: 58 / 255, blue: 69 / 255) // #303A45
+    static let appPrimary = Color(red: 71 / 255, green: 215 / 255, blue: 172 / 255) // #47D7AC 青绿
+    static let appSecondary = Color(red: 112 / 255, green: 167 / 255, blue: 255 / 255) // #70A7FF 蓝
+    static let appTertiary = Color(red: 255 / 255, green: 179 / 255, blue: 106 / 255) // #FFB36A 琥珀
+    static let appDanger = Color(red: 255 / 255, green: 125 / 255, blue: 135 / 255) // #FF7D87 错误/离线
+    static let appSuccess = Color(red: 52 / 255, green: 168 / 255, blue: 83 / 255) // #34A853
+    static let appTextPrimary = Color(red: 243 / 255, green: 246 / 255, blue: 248 / 255) // #F3F6F8
+    static let appTextSecondary = Color(red: 170 / 255, green: 181 / 255, blue: 192 / 255) // #AAB5C0
+    static let appTextTertiary = Color(red: 112 / 255, green: 124 / 255, blue: 136 / 255) // #707C88
+    static let appThreadAccent = Color(red: 143 / 255, green: 122 / 255, blue: 255 / 255) // 线程指标紫色点缀
+}
+
 struct ContentView: View {
     @EnvironmentObject private var service: ServiceManager
 
@@ -13,9 +32,9 @@ struct ContentView: View {
         }
         .padding(24)
         .background(
-            LinearGradient(colors: [Color(red: 0.06, green: 0.07, blue: 0.09), Color(red: 0.10, green: 0.11, blue: 0.15)], startPoint: .topLeading, endPoint: .bottomTrailing)
+            LinearGradient(colors: [.appBackground, .appSurface], startPoint: .topLeading, endPoint: .bottomTrailing)
         )
-        .foregroundStyle(.white)
+        .foregroundStyle(.appTextPrimary)
         .alert("Codex Mini", isPresented: $service.showAlert) {
             Button("好") {}
         } message: {
@@ -27,13 +46,13 @@ struct ContentView: View {
         HStack(spacing: 14) {
             Image(systemName: "iphone.and.arrow.forward")
                 .font(.system(size: 34, weight: .bold))
-                .foregroundStyle(.cyan)
+                .foregroundStyle(.appPrimary)
             VStack(alignment: .leading, spacing: 4) {
                 Text(service.appName)
                     .font(.system(size: 28, weight: .bold, design: .rounded))
                 Text("本地部署版 · 手机连接这台 Mac 上的 Codex")
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.55))
+                    .foregroundStyle(.appTextSecondary)
             }
             Spacer()
             StatusBadge(title: service.state.displayName, color: service.statusColor)
@@ -43,13 +62,13 @@ struct ContentView: View {
     private var statusPanel: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 12) {
-                MetricCard(title: "HTTP", value: service.healthOK ? "正常" : "不可用", footnote: service.healthText, tint: service.healthOK ? .green : .orange)
-                MetricCard(title: "端口", value: String(service.port), footnote: service.currentEntryKindText, tint: .cyan)
-                MetricCard(title: "线程", value: service.threadCountText, footnote: service.latestThreadTitle, tint: .purple)
+                MetricCard(title: "HTTP", value: service.healthOK ? "正常" : "不可用", footnote: service.healthText, tint: service.healthOK ? .appSuccess : .appTertiary)
+                MetricCard(title: "端口", value: String(service.port), footnote: service.currentEntryKindText, tint: .appPrimary)
+                MetricCard(title: "线程", value: service.threadCountText, footnote: service.latestThreadTitle, tint: .appThreadAccent)
             }
             Text(service.shortInstallDirectory)
                 .font(.system(size: 12, weight: .medium, design: .monospaced))
-                .foregroundStyle(.white.opacity(0.45))
+                .foregroundStyle(.appTextTertiary)
                 .lineLimit(1)
         }
         .padding(16)
@@ -64,19 +83,19 @@ struct ContentView: View {
                         .font(.system(size: 15, weight: .bold, design: .rounded))
                     Text("只保留本机服务、局域网访问和本地日志")
                         .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.42))
+                        .foregroundStyle(.appTextTertiary)
                 }
                 Spacer()
                 Text(service.lastUpdatedText)
                     .font(.system(size: 11, weight: .medium, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.42))
+                    .foregroundStyle(.appTextTertiary)
             }
 
             HStack(spacing: 10) {
-                LargeActionButton(title: "打开网页", systemImage: "safari", tint: .blue) { service.openWeb() }
-                LargeActionButton(title: service.currentCopyButtonTitle, systemImage: "link", tint: .cyan) { service.copyLocalLink() }
-                LargeActionButton(title: "重启服务", systemImage: "arrow.clockwise", tint: .orange) { Task { await service.restart() } }
-                LargeActionButton(title: "刷新状态", systemImage: "arrow.triangle.2.circlepath", tint: .gray) { Task { await service.refresh() } }
+                LargeActionButton(title: "打开网页", systemImage: "safari", tint: .appSecondary) { service.openWeb() }
+                LargeActionButton(title: service.currentCopyButtonTitle, systemImage: "link", tint: .appPrimary) { service.copyLocalLink() }
+                LargeActionButton(title: "重启服务", systemImage: "arrow.clockwise", tint: .appTertiary) { Task { await service.restart() } }
+                LargeActionButton(title: "刷新状态", systemImage: "arrow.triangle.2.circlepath", tint: .appTextTertiary) { Task { await service.refresh() } }
             }
         }
         .padding(16)
@@ -87,16 +106,16 @@ struct ContentView: View {
         HStack(spacing: 12) {
             Label(service.logPreview.isEmpty ? "暂无最近日志" : "最近日志已收起，完整内容可从右侧打开", systemImage: "doc.text")
                 .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(.white.opacity(0.42))
+                .foregroundStyle(.appTextTertiary)
                 .lineLimit(1)
             Spacer(minLength: 16)
             VStack(alignment: .trailing, spacing: 2) {
                 Text(service.currentEntryKindText)
                     .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(.white.opacity(0.30))
+                    .foregroundStyle(.appTextTertiary.opacity(0.75))
                 Text(service.currentEntryURLString)
                     .font(.system(size: 11, weight: .medium, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.38))
+                    .foregroundStyle(.appTextTertiary)
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .textSelection(.enabled)
@@ -112,8 +131,8 @@ struct ContentView: View {
 private extension View {
     func panelBackground(cornerRadius: CGFloat) -> some View {
         self
-            .background(.white.opacity(0.055), in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous).stroke(.white.opacity(0.08)))
+            .background(.appSurfaceAlt, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous).stroke(.appDivider))
     }
 }
 
@@ -139,13 +158,13 @@ private struct MetricCard: View {
     let tint: Color
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(title).font(.system(size: 11, weight: .bold)).foregroundStyle(.white.opacity(0.45))
+            Text(title).font(.system(size: 11, weight: .bold)).foregroundStyle(.appTextTertiary)
             Text(value).font(.system(size: 24, weight: .bold, design: .rounded)).foregroundStyle(tint)
-            Text(footnote).font(.system(size: 11, weight: .medium)).foregroundStyle(.white.opacity(0.42)).lineLimit(1)
+            Text(footnote).font(.system(size: 11, weight: .medium)).foregroundStyle(.appTextTertiary).lineLimit(1)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
-        .background(.black.opacity(0.18), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .background(.appSurfaceDeep, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(tint.opacity(0.18)))
     }
 }
@@ -181,6 +200,6 @@ private struct TextLinkButton: View {
                 .font(.system(size: 12, weight: .bold))
         }
         .buttonStyle(.plain)
-        .foregroundStyle(.white.opacity(0.58))
+        .foregroundStyle(.appTextSecondary)
     }
 }
